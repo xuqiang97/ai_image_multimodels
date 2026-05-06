@@ -1,0 +1,2718 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI生图-多模型并行需求</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f1f5f9; color: #334155; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+
+        /* ============================================================ 布局 */
+        .layout { display: flex; min-height: 100vh; }
+        aside.side-nav { width: 260px; background: white; border-right: 1px solid #e2e8f0; flex-shrink: 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+        main.main-area { flex: 1; min-width: 0; overflow-x: hidden; }
+
+        /* 左导航 */
+        .side-nav-header { padding: 16px 20px; border-bottom: 1px solid #e2e8f0; background: #0f172a; color: white; }
+        .side-nav-header .brand { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .side-nav-header .brand i { color: #60a5fa; }
+        .side-nav-header .sub { font-size: 10px; color: #94a3b8; margin-top: 3px; letter-spacing: 0.05em; }
+
+        .nav-group-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; padding: 14px 20px 6px; }
+        .nav-item { display: flex; align-items: center; padding: 7px 20px 7px 26px; font-size: 13px; color: #475569; cursor: pointer; border-left: 3px solid transparent; transition: all 0.15s; user-select: none; }
+        .nav-item:hover { background-color: #f8fafc; color: #1e293b; }
+        .nav-item.active { background-color: #eff6ff; color: #2563eb; border-left-color: #2563eb; font-weight: 600; }
+        .nav-item .nav-num { font-family: ui-monospace, monospace; font-size: 10px; color: #94a3b8; margin-right: 8px; min-width: 28px; }
+        .nav-item.active .nav-num { color: #2563eb; }
+
+        /* 页面容器 */
+        .page-container { max-width: 1320px; margin: 0 auto; padding: 32px 32px 80px; }
+
+        /* 页头 */
+        .page-title-line { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: #2563eb; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; }
+        .page-title-line::before { content: ''; width: 28px; height: 1px; background: #2563eb; }
+        h1.page-title { font-size: 26px; font-weight: 700; color: #0f172a; letter-spacing: -0.01em; }
+        .page-sub { font-size: 13px; color: #64748b; margin-top: 10px; line-height: 1.7; max-width: 800px; }
+
+        /* section 卡片 */
+        .section-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 32px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+        .section-header { padding: 18px 24px; border-bottom: 1px solid #f1f5f9; background: linear-gradient(to bottom, #fafbfc, #ffffff); }
+        .section-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; margin-right: 10px; letter-spacing: 0.05em; font-family: ui-monospace, monospace; background: #dbeafe; color: #1d4ed8; vertical-align: middle; }
+        .section-title { font-size: 17px; font-weight: 700; color: #0f172a; display: inline-flex; align-items: center; vertical-align: middle; }
+        .section-desc { font-size: 13px; color: #64748b; margin-top: 8px; line-height: 1.7; }
+        .section-body { padding: 22px 24px; background: #fafbfc; }
+        .section-note { margin-top: 14px; padding: 11px 14px; background: #fffbeb; border-left: 3px solid #f59e0b; border-radius: 4px; font-size: 12px; color: #78350f; line-height: 1.7; }
+        .section-note.info { background: #eff6ff; border-left-color: #3b82f6; color: #1e40af; }
+        .section-note.info i { color: #3b82f6; }
+        .section-note code { font-family: ui-monospace, monospace; font-size: 11px; background: rgba(255,255,255,0.6); padding: 1px 5px; border-radius: 3px; }
+
+        /* sub-section (within a section) */
+        .sub-section { margin-bottom: 22px; }
+        .sub-section:last-child { margin-bottom: 0; }
+        .sub-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+        .version-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; }
+        .version-chip.v1 { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
+        .version-chip.v2 { background: #2563eb; color: white; }
+
+        /* ============================================================ 按钮 */
+        .btn-primary { display: inline-flex; align-items: center; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; color: white; background-color: #2563eb; box-shadow: 0 1px 2px rgba(37,99,235,0.25); cursor: pointer; transition: all 0.15s; border: none; }
+        .btn-primary:hover { background-color: #1d4ed8; }
+        .btn-primary:disabled { background-color: #94a3b8; cursor: not-allowed; box-shadow: none; }
+        .btn-default { display: inline-flex; align-items: center; padding: 8px 16px; font-size: 13px; font-weight: 500; border-radius: 6px; color: #374151; background-color: white; border: 1px solid #d1d5db; cursor: pointer; transition: all 0.15s; }
+        .btn-default:hover { background-color: #f9fafb; border-color: #9ca3af; }
+
+        /* ============================================================ Pill 模型选择 */
+        .model-pill { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer; user-select: none; transition: all 0.18s; border: 1.5px solid transparent; position: relative; }
+        .model-pill i.check { font-size: 10px; opacity: 0; width: 0; transition: all 0.2s; }
+        .model-pill.active i.check { opacity: 1; width: 10px; }
+        .model-pill i.xmark { font-size: 10px; opacity: 0; width: 0; transition: all 0.2s; color: #94a3b8; }
+        .model-pill:not(.active):not(.disabled) i.xmark { opacity: 1; width: 10px; }
+        .model-pill[data-color="blue"] { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+        .model-pill[data-color="blue"].active { background: #dbeafe; border-color: #3b82f6; }
+        .model-pill[data-color="green"] { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+        .model-pill[data-color="green"].active { background: #dcfce7; border-color: #22c55e; }
+        .model-pill[data-color="orange"] { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+        .model-pill[data-color="orange"].active { background: #ffedd5; border-color: #f97316; }
+        .model-pill:not(.active):not(.disabled) { opacity: 0.5; }
+        .model-pill:not(.active):not(.disabled):hover { opacity: 0.85; }
+        .model-pill.readonly { cursor: default; pointer-events: none; }
+
+        /* Mini pill（用于 列表 / L2 / 微缩条） */
+        .mini-pill { display: inline-flex; align-items: center; font-size: 11px; padding: 1px 6px; border-radius: 3px; font-weight: 700; letter-spacing: 0.02em; vertical-align: middle; }
+        .mini-pill[data-color="blue"] { background: #dbeafe; color: #1d4ed8; }
+        .mini-pill[data-color="green"] { background: #dcfce7; color: #15803d; }
+        .mini-pill[data-color="orange"] { background: #ffedd5; color: #c2410c; }
+
+        /* L2 卡片角标 (实色背景) */
+        .card-badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; color: white; backdrop-filter: blur(4px); letter-spacing: 0.02em; }
+        .card-badge[data-color="blue"] { background: rgba(29,78,216,0.88); }
+        .card-badge[data-color="green"] { background: rgba(21,128,61,0.88); }
+        .card-badge[data-color="orange"] { background: rgba(194,65,12,0.88); }
+
+        /* ============================================================ 矩阵 */
+        .matrix-wrap { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; }
+        .matrix-title { font-size: 13px; font-weight: 600; color: #0f172a; display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .matrix-title .title-left { display: flex; align-items: center; gap: 8px; }
+        .matrix-title .title-left .dot { width: 4px; height: 16px; background: #2563eb; border-radius: 2px; }
+        .matrix-title .actions { display: flex; gap: 4px; }
+        .quick-action { font-size: 11px; color: #64748b; padding: 4px 10px; border-radius: 4px; cursor: pointer; background: white; border: 1px solid #e2e8f0; transition: all 0.15s; display: inline-flex; align-items: center; gap: 4px; }
+        .quick-action:hover { background: #eff6ff; color: #1d4ed8; border-color: #93c5fd; }
+
+        .pill-row { display: flex; gap: 6px; flex-wrap: wrap; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px dashed #e2e8f0; align-items: center; }
+        .pill-row-label { font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-right: 4px; }
+
+        .matrix-table-wrap { background: white; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb; }
+        .config-matrix { width: 100%; border-collapse: separate; border-spacing: 0; }
+        .config-matrix th, .config-matrix td { padding: 7px 6px; text-align: center; font-size: 12px; }
+        .config-matrix thead th { background: #f9fafb; color: #374151; font-weight: 600; font-size: 11px; border-bottom: 1px solid #e5e7eb; padding: 9px 6px; vertical-align: middle; }
+        .config-matrix thead th.first-col { background: #f3f4f6; border-right: 1px solid #e5e7eb; text-align: left; padding-left: 12px; }
+        .config-matrix tbody td { border-top: 1px solid #f3f4f6; vertical-align: middle; }
+        .config-matrix tbody tr:hover td { background: #fafbfc; }
+        .config-matrix tbody tr:hover td.row-label { background: #f1f5f9; }
+        .config-matrix .row-label { text-align: left; color: #334155; font-weight: 500; padding-left: 12px; padding-right: 8px; background: #fafbfc; white-space: nowrap; font-size: 12px; border-right: 1px solid #e5e7eb; }
+        .config-matrix .row-label .row-short { font-size: 10px; color: #94a3b8; font-weight: 500; margin-left: 3px; font-family: ui-monospace, monospace; }
+
+        .config-matrix input[type=number] { width: 60px; padding: 3px 4px 3px 6px; font-size: 12px; text-align: center; border: 1px solid #d1d5db; border-radius: 4px; font-family: ui-monospace, monospace; background: white; }
+        .config-matrix input[type=number]:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }
+        .config-matrix input[type=number]:read-only,
+        .config-matrix input[type=number]:disabled { background: #f9fafb; color: #6b7280; cursor: not-allowed; }
+        .config-matrix input[type=number].over-max { border-color: #dc2626; background: #fef2f2; color: #b91c1c; }
+
+
+        /* 矩阵小计行 */
+        .config-matrix tr.summary-row td { background: #eff6ff !important; border-top: 2px solid #bfdbfe; font-weight: 700; color: #1d4ed8; padding: 9px 6px; }
+        .config-matrix tr.summary-row td.row-label { background: #dbeafe !important; color: #1e3a8a; }
+        .config-matrix .col-subtotal { font-family: ui-monospace, monospace; font-size: 14px; display: inline-block; min-width: 28px; padding: 2px 8px; border-radius: 4px; transition: all 0.2s; }
+        .config-matrix .col-subtotal.over-quota { color: #dc2626; background: rgba(220,38,38,0.12); }
+
+        /* 列头 */
+        .col-model-head { padding: 8px 4px !important; }
+        .col-model-head .head-stack { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+        .col-model-head .model-name-full { font-size: 12px; font-weight: 700; color: #0f172a; }
+        .col-model-head .model-short { font-size: 9px; color: #94a3b8; font-family: ui-monospace, monospace; letter-spacing: 0.05em; }
+
+        /* 矩阵底栏（深色） */
+        .matrix-summary-bar { background: linear-gradient(to right, #0f172a, #1e293b); color: #e2e8f0; padding: 12px 16px; border-radius: 0 0 8px 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: -1px; }
+        .matrix-total { font-size: 12px; display: flex; align-items: center; gap: 6px; }
+        .matrix-total .total-label { color: #cbd5e1; }
+        .matrix-total strong { font-size: 20px; color: #fbbf24; font-family: ui-monospace, monospace; min-width: 28px; display: inline-block; text-align: center; }
+        .matrix-total .unit { color: #94a3b8; font-size: 11px; }
+        .quota-recap { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .quota-recap .label { color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+        .quota-recap .quota-item { font-family: ui-monospace, monospace; font-size: 11px; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; background: rgba(255,255,255,0.04); }
+        .quota-recap .quota-item .k { color: #64748b; font-weight: 600; }
+        .quota-recap .quota-item .v { color: #cbd5e1; font-weight: 700; }
+        .quota-recap .quota-item.danger { background: rgba(239,68,68,0.18); border: 1px solid rgba(239,68,68,0.32); }
+        .quota-recap .quota-item.danger .v { color: #fca5a5; }
+
+        /* number 弹动效果 */
+        @keyframes numberPop { 0% { transform: scale(1); } 50% { transform: scale(1.18); color: #3b82f6; } 100% { transform: scale(1); } }
+        .number-pop { animation: numberPop 0.3s ease-out; }
+
+        /* ============================================================ 顶部额度栏 demo */
+        .demo-frame { background: white; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+        .demo-frame .frame-tab { background: #f1f5f9; color: #64748b; font-size: 10px; font-weight: 700; padding: 4px 10px; letter-spacing: 0.05em; }
+        .demo-frame .frame-body { padding: 14px; }
+        .quota-header-bar { display: inline-flex; align-items: center; gap: 12px; background: #eff6ff; padding: 8px 14px; border-radius: 8px; border: 1px solid #bfdbfe; flex-wrap: wrap; }
+        .quota-header-bar .qh-coin { color: #2563eb; font-size: 13px; }
+        .quota-header-bar .qh-label { font-size: 11px; font-weight: 700; color: #1e3a8a; }
+        .quota-header-bar .qh-sep { width: 1px; height: 14px; background: #bfdbfe; }
+        .quota-header-bar .qh-model { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+        .quota-header-bar .qh-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .quota-header-bar .qh-dot[data-color="blue"] { background: #3b82f6; }
+        .quota-header-bar .qh-dot[data-color="green"] { background: #22c55e; }
+        .quota-header-bar .qh-dot[data-color="orange"] { background: #f97316; }
+        .quota-header-bar .qh-name { font-weight: 700; color: #1e293b; }
+        .quota-header-bar .qh-val { font-family: ui-monospace, monospace; font-weight: 700; color: #1e3a8a; }
+        .quota-header-bar .qh-val.warn { color: #d97706; }
+        .quota-header-bar .qh-val.danger { color: #dc2626; }
+        .quota-header-bar .qh-refresh { color: #2563eb; font-size: 12px; cursor: pointer; padding: 4px; }
+        .quota-header-bar .qh-refresh:hover { transform: rotate(180deg); transition: transform 0.4s; }
+
+        /* ============================================================ 漏斗摘要卡片 */
+
+        /* 漏斗表格 */
+
+        /* 漏斗 - hover 弹层版 */
+
+        /* L2 顶部漏斗（横向布局，更宽展示） */
+
+        /* ============================================================ 列表行 mock */
+        .list-col-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; font-weight: 700; }
+        .status-pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; }
+        .status-pill.green { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+        .status-pill.green::before { content: ''; width: 5px; height: 5px; background: #22c55e; border-radius: 50%; margin-right: 5px; }
+        .status-pill.yellow { background: #fef9c3; color: #a16207; border: 1px solid #fde68a; }
+        .status-pill.yellow::before { content: ''; width: 5px; height: 5px; background: #eab308; border-radius: 50%; margin-right: 5px; }
+
+        /* hover 触发的微章 */
+
+        /* hover 弹出的 mini 矩阵 */
+
+        /* Tab 2 微缩状态行 */
+        .progress-bar { height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
+
+        /* ============================================================ L2 卡片 */
+        .audit-card { background: white; border: 2px solid transparent; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.03); transition: all 0.15s; position: relative; }
+        .audit-card:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,0.06); }
+        .audit-card .card-img { aspect-ratio: 1; background: #f1f5f9; position: relative; overflow: hidden; }
+        .audit-card .card-img img { width: 100%; height: 100%; object-fit: cover; }
+        .audit-card .card-img .badge-anchor { position: absolute; top: 6px; right: 6px; }
+        .audit-card .card-actions { display: flex; border-top: 1px solid #f1f5f9; height: 34px; }
+        .audit-card .card-actions button { flex: 1; font-size: 11px; font-weight: 500; color: #64748b; background: none; border: none; cursor: pointer; transition: all 0.15s; }
+        .audit-card .card-actions button + button { border-left: 1px solid #f1f5f9; }
+        .audit-card .card-actions button:hover { background: #f8fafc; }
+
+        /* L2 分组头 */
+        .group-header { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: white; border-left: 3px solid #2563eb; border-radius: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+        .group-header.color-blue { border-left-color: #3b82f6; }
+        .group-header.color-yellow { border-left-color: #eab308; }
+        .group-header.color-purple { border-left-color: #a855f7; }
+        .group-header.color-gray { border-left-color: #94a3b8; }
+        .group-header .group-name { font-size: 14px; font-weight: 700; color: #0f172a; }
+        .group-header .group-total { font-size: 11px; color: #64748b; }
+        .group-header .group-total strong { color: #0f172a; font-weight: 700; }
+        .group-header .divider { width: 1px; height: 14px; background: #e2e8f0; }
+        .group-header .model-stats { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 11px; }
+        .group-header .model-stat { display: inline-flex; align-items: center; gap: 4px; color: #64748b; }
+        .group-header .v-ok { color: #15803d; font-weight: 700; }
+        .group-header .v-ng { color: #dc2626; font-weight: 700; }
+
+        /* ============================================================ Modal & Drawer mock */
+        .modal-mock { background: white; border-radius: 8px; box-shadow: 0 20px 40px rgba(0,0,0,0.12); border: 1px solid #e5e7eb; overflow: hidden; }
+        .modal-header { padding: 14px 20px; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; }
+        .modal-header .modal-title { font-size: 14px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px; }
+        .modal-body { padding: 18px 20px; }
+        .modal-footer { padding: 10px 20px; border-top: 1px solid #e5e7eb; background: #f9fafb; display: flex; justify-content: flex-end; gap: 8px; }
+        .submit-check-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+        .submit-check-table thead th { background: #f9fafb; color: #64748b; font-size: 10px; font-weight: 600; text-transform: uppercase; padding: 6px 10px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        .submit-check-table tbody td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; }
+        .submit-check-table tbody tr:last-child td { border-bottom: none; }
+        .submit-check-table tbody tr.danger { background: #fef2f2; }
+        .submit-check-table .qn { font-family: ui-monospace, monospace; font-weight: 700; }
+        .submit-check-table .model-cell { display: flex; align-items: center; gap: 6px; }
+        .submit-check-table .status-ok { color: #16a34a; }
+        .submit-check-table .status-ng { color: #dc2626; }
+
+        /* ============================================================ Toast */
+        .toast { position: fixed; top: 24px; left: 50%; transform: translate(-50%, -16px); background: rgba(15,23,42,0.92); color: white; padding: 8px 18px; border-radius: 999px; font-size: 12px; opacity: 0; transition: all 0.25s; z-index: 9999; pointer-events: none; backdrop-filter: blur(8px); display: flex; align-items: center; gap: 6px; }
+        .toast.show { opacity: 1; transform: translate(-50%, 0); }
+        .toast i { color: #4ade80; }
+        .toast.toast-error i { color: #f87171; }
+
+        /* 缩写规则速查表 */
+        .shorthand-rules-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; background: white; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+        .shorthand-rules-table th, .shorthand-rules-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #f1f5f9; }
+        .shorthand-rules-table thead th { background: #f8fafc; color: #475569; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+        .shorthand-rules-table tbody tr:last-child td { border-bottom: none; }
+        .shorthand-rules-table .form-tag { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; font-family: ui-monospace, monospace; }
+        .shorthand-rules-table .form-tag.full { background: #dbeafe; color: #1d4ed8; }
+        .shorthand-rules-table .form-tag.short { background: #fef3c7; color: #92400e; }
+
+        /* L3 顶部 Tag demo */
+        .l3-bar { background: #0f172a; color: white; padding: 12px 20px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; }
+        .l3-bar .l3-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .l3-bar .l3-tag { font-size: 11px; padding: 3px 10px; border-radius: 4px; font-weight: 700; }
+        .l3-bar .l3-tag[data-color="blue"] { background: rgba(59,130,246,0.25); color: #93c5fd; border: 1px solid rgba(59,130,246,0.4); }
+        .l3-bar .l3-tag[data-color="green"] { background: rgba(34,197,94,0.25); color: #86efac; border: 1px solid rgba(34,197,94,0.4); }
+        .l3-bar .l3-tag[data-color="orange"] { background: rgba(249,115,22,0.25); color: #fdba74; border: 1px solid rgba(249,115,22,0.4); }
+
+
+        /* ============================================================ Drawer mock + biz-info */
+        .drawer-mock { background: white; border-radius: 8px; border: 1px solid #e5e7eb; box-shadow: -8px 0 24px rgba(0,0,0,0.06); overflow: hidden; max-width: 680px; }
+        .drawer-mock .drawer-header { padding: 14px 20px; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; background: #fafbfc; }
+        .drawer-mock .drawer-title { font-size: 14px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px; }
+        .drawer-mock .drawer-title i { color: #2563eb; }
+        .drawer-mock .drawer-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; background: #eff6ff; color: #2563eb; font-family: ui-monospace, monospace; }
+        .drawer-mock .drawer-close { background: none; border: none; color: #64748b; font-size: 14px; cursor: pointer; }
+        .drawer-mock .drawer-body { padding: 18px 20px; max-height: 720px; overflow-y: auto; }
+        .drawer-mock .drawer-footer { padding: 12px 20px; border-top: 1px solid #e5e7eb; background: #f9fafb; display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+        .drawer-mock .drawer-footer.with-nav { justify-content: space-between; }
+        .drawer-nav { display: flex; align-items: center; gap: 6px; }
+        .drawer-nav .nav-btns { display: flex; gap: 4px; }
+        .drawer-nav .nav-btn { width: 28px; height: 24px; border: 1px solid #d1d5db; background: white; border-radius: 4px; cursor: pointer; color: #64748b; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
+        .drawer-nav .nav-btn.active { background: #eff6ff; border-color: #93c5fd; color: #2563eb; }
+        .drawer-nav .nav-label { font-size: 10px; color: #94a3b8; }
+        .drawer-footer-right { display: flex; gap: 8px; align-items: center; }
+        .task-meta-bar { display: flex; gap: 14px; flex-wrap: wrap; padding: 8px 14px; background: #fafbfc; border-radius: 6px; margin-bottom: 14px; font-size: 11px; }
+        .task-meta-bar .meta-item { display: flex; align-items: center; gap: 4px; }
+        .task-meta-bar .meta-label { color: #94a3b8; }
+        .task-meta-bar .meta-value { color: #1e293b; font-weight: 600; font-family: ui-monospace, monospace; }
+
+        /* ============================================================ Legacy 现状对照 (phase 1 抽屉) */
+        .legacy-rows { display: flex; flex-direction: column; }
+        .legacy-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; }
+        .legacy-row + .legacy-row { border-top: 1px solid #f1f5f9; }
+        .legacy-label { font-size: 13px; color: #1e293b; }
+        .legacy-short { color: #94a3b8; font-size: 11px; margin-left: 2px; }
+        .legacy-input-wrap { display: flex; align-items: center; gap: 6px; }
+        .legacy-input-wrap input[type=number] { width: 64px; padding: 5px 4px 5px 8px; font-size: 13px; text-align: center; border: 1px solid #cbd5e1; border-radius: 6px; font-family: ui-monospace, monospace; }
+        .legacy-input-wrap input[type=number]:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.12); }
+        .legacy-unit { font-size: 12px; color: #64748b; }
+        .legacy-section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
+        .legacy-section-head .legacy-title { font-size: 14px; font-weight: 700; color: #1e293b; }
+        .legacy-section-head .legacy-subtitle { color: #94a3b8; font-weight: 400; font-size: 11px; }
+        .legacy-summary { padding-top: 12px; margin-top: 14px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 13px; }
+
+        /* ============================================================ Matrix 列头 chip 样式 */
+        .head-stack { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0; }
+        .head-stack .model-short-chip { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; color: white; line-height: 1.4; font-family: ui-monospace, monospace; letter-spacing: 0.02em; }
+        .head-stack .model-short-chip[data-color="blue"] { background: #2563eb; }
+        .head-stack .model-short-chip[data-color="green"] { background: #16a34a; }
+        .head-stack .model-short-chip[data-color="orange"] { background: #ea580c; }
+        .head-stack .model-name-full { font-size: 11px; color: #475569; font-weight: 500; line-height: 1.2; }
+
+        /* ============================================================ Cell 数值 + ≤N max hint */
+        .config-matrix .cell-wrap { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; }
+        .config-matrix .max-hint { font-size: 9px; color: #94a3b8; font-family: ui-monospace, monospace; line-height: 1; margin-top: 2px; }
+        .config-matrix .max-hint.zero-max { color: #cbd5e1; }
+        .config-matrix .max-hint.over-max { color: #dc2626; font-weight: 700; }
+
+        /* D2 过 max cell 视觉 */
+        .config-matrix input.over-max-cell { border: 1.5px solid #dc2626 !important; background: #fef2f2 !important; color: #b91c1c !important; font-weight: 700; }
+        .config-matrix input.over-max-cell:focus { box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15) !important; }
+
+        /* M1 现状对照专用：textarea + 2 列网格 */
+        .legacy-textarea { width: 100%; min-height: 100px; padding: 10px 12px; font-size: 12px; border: 1px solid #e5e7eb; border-radius: 6px; resize: none; color: #1e293b; line-height: 1.6; box-sizing: border-box; font-family: inherit; background: white; }
+        .legacy-textarea[readonly] { color: #1e293b; cursor: default; }
+        .legacy-textarea::placeholder { color: #cbd5e1; }
+        .legacy-rows-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 32px; padding: 14px 16px; background: #fafbfc; border: 1px dashed #e5e7eb; border-radius: 6px; }
+        .legacy-row-grid { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .legacy-row-grid .legacy-label { font-size: 12px; color: #475569; flex-shrink: 0; font-weight: 500; }
+        .legacy-row-grid input[type=number] { width: 80px; padding: 6px 8px; font-size: 12px; border: 1px solid #d1d5db; border-radius: 4px; text-align: center; background: white; color: #1e293b; font-family: ui-monospace, monospace; }
+
+        /* M1 双版本并排布局 */
+        .modal-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+        .modal-pair .modal-mock { max-width: none; }
+        .modal-version-label { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 8px; }
+        .modal-version-label .v-chip-meigong { padding: 2px 8px; border-radius: 4px; background: #f3e8ff; color: #6d28d9; letter-spacing: 0.02em; }
+        .modal-version-label .v-chip-yunying { padding: 2px 8px; border-radius: 4px; background: #cffafe; color: #0e7490; letter-spacing: 0.02em; }
+        .modal-version-label .v-subtitle { font-weight: normal; color: #64748b; letter-spacing: normal; }
+
+        /* M2 批量修改三态 cell 视觉 */
+        .config-matrix input.m2-cell { width: 60px; padding: 5px 8px; font-size: 12px; border: 1px solid #d1d5db; border-radius: 4px; text-align: center; font-family: ui-monospace, monospace; transition: all 0.15s; }
+        .config-matrix input.m2-cell:placeholder-shown { background: #f9fafb; color: #94a3b8; font-style: italic; border-color: #e5e7eb; }
+        .config-matrix input.m2-cell:not(:placeholder-shown) { font-weight: 700; }
+        .config-matrix input.m2-cell.m2-zero { border-color: #dc2626 !important; background: #fef2f2 !important; color: #b91c1c !important; }
+        .config-matrix input.m2-cell.m2-modified { border-color: #3b82f6 !important; background: #eff6ff !important; color: #1d4ed8 !important; }
+        .config-matrix input.m2-cell:focus { outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15); }
+        .config-matrix input.m2-cell.m2-zero:focus { box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15); }
+
+        /* S5 LinkFox 专属字段 spec block */
+        .field-spec-block { background: #fafbfc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 14px; max-width: 440px; }
+        .field-spec-block + .field-spec-block { margin-top: 10px; }
+        .field-spec-block .field-spec-label { display: block; font-size: 13px; font-weight: 500; color: #1e293b; margin-bottom: 6px; }
+        .field-spec-block .field-spec-fake-select { width: 100%; padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: white; display: flex; justify-content: space-between; align-items: center; }
+        .field-spec-block .field-spec-fake-textarea { width: 100%; min-height: 50px; padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: white; }
+        .field-spec-block .field-spec-note { margin-bottom: 10px; padding: 7px 10px; background: #eff6ff; border-left: 3px solid #3b82f6; border-radius: 0 4px 4px 0; font-size: 11px; color: #1e40af; line-height: 1.5; }
+
+        /* S5 Sub-section 2: ? tooltip 文案 demo */
+        .tooltip-demo-container { background: #fafbfc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 16px 20px; display: inline-block; }
+        .tooltip-demo-container .tooltip-label-row { display: inline-flex; align-items: center; gap: 6px; color: #1e293b; font-size: 13px; font-weight: 500; }
+        .tooltip-demo-container .tooltip-bubble { margin-top: 12px; margin-left: 24px; background: #1e293b; color: white; padding: 10px 14px; border-radius: 6px; font-size: 12px; line-height: 1.7; max-width: 420px; position: relative; }
+        .tooltip-demo-container .tooltip-bubble strong { color: #fbbf24; font-weight: 700; }
+        .tooltip-demo-container .tooltip-bubble-arrow { position: absolute; top: -5px; left: 80px; width: 10px; height: 10px; background: #1e293b; transform: rotate(45deg); }
+
+        /* S12 L3 dark theme: field-spec-block 黑底（贴近真实大屏审图右栏） */
+        #s-17 .field-spec-block { background: #0f172a; border-color: #1e293b; }
+        #s-17 .field-spec-block .field-spec-label { color: #e2e8f0; }
+        #s-17 .field-spec-block .field-spec-fake-textarea { background: #1e293b; color: #e2e8f0; border-color: #334155; }
+        #s-17 .field-spec-block .field-spec-note { background: rgba(59, 130, 246, 0.12); border-left-color: #60a5fa; color: #93c5fd; }
+        #s-17 .field-spec-block .field-spec-note strong { color: #bfdbfe; }
+        #s-17 .field-spec-block code { background: #1e293b; color: #fcd34d; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+
+        /* S11 Tab 列表层 列展示 mockup */
+        .list-col-mock { background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; font-size: 12px; }
+        .list-col-mock .col-title { font-size: 13px; font-weight: 700; color: #475569; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #f1f5f9; }
+        .list-col-mock .col-progress-bar { width: 100%; height: 8px; background: #f1f5f9; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
+        .list-col-mock .col-progress-bar > div { height: 100%; background: #a78bfa; border-radius: 4px; }
+        .list-col-mock .col-elapsed { font-size: 11px; color: #64748b; margin-bottom: 8px; }
+        .list-col-mock .col-stats { font-size: 12px; line-height: 1.6; }
+        .list-col-mock .col-stats .pipe { color: #cbd5e1; margin: 0 4px; }
+        .list-col-mock .col-stats .col-stat-plan { color: #64748b; }
+        .list-col-mock .col-stats .col-stat-success { color: #16a34a; }
+        .list-col-mock .col-stats .col-stat-running { color: #7c3aed; }
+        .list-col-mock .col-stats .col-stat-failed { color: #dc2626; }
+        .list-col-mock .col-stats strong { font-weight: 700; }
+        .list-col-mock .col-chip-success { display: inline-flex; align-items: center; gap: 3px; padding: 4px 9px; border-radius: 4px; background: #dcfce7; color: #16a34a; font-weight: 700; font-size: 12px; }
+        .list-col-mock .col-chip-fail { display: inline-flex; align-items: center; gap: 3px; padding: 4px 9px; border-radius: 4px; background: #fee2e2; color: #dc2626; font-weight: 700; font-size: 12px; }
+        .list-col-mock .col-pill-row { display: flex; flex-wrap: wrap; gap: 4px; }
+        .list-col-mock .col-pill-row.bottom { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #e2e8f0; }
+        .list-col-mock .col-pill-row:not(.bottom) { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px dashed #e2e8f0; }
+        .list-col-mock .col-grid { display: grid; grid-template-columns: 56px 1fr; gap: 4px 12px; font-size: 12px; }
+        .list-col-mock .col-grid .col-key { color: #64748b; }
+        .list-col-mock .col-grid .col-val { text-align: right; color: #1e293b; }
+        .list-col-mock .col-grid .col-val .col-stat-success { color: #16a34a; }
+        .list-col-mock .col-grid .col-val .col-stat-failed { color: #dc2626; }
+
+        /* S11/S12 per-model 明细行（icon + 数字 / 1 行 2 个模型 / 兼容 3-4 模型） */
+        .list-col-mock .col-model-detail-block { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #e2e8f0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+        .list-col-mock .col-model-detail { display: flex; align-items: center; gap: 10px; padding: 3px 0; font-size: 12px; }
+        .list-col-mock .col-model-detail .mini-pill { min-width: 36px; justify-content: center; }
+        .list-col-mock .col-model-detail .stat-icon-num { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; }
+        .list-col-mock .col-model-detail .stat-icon-num i { font-size: 10px; }
+        .list-col-mock .col-model-detail .stat-success { color: #16a34a; }
+        .list-col-mock .col-model-detail .stat-running { color: #7c3aed; }
+        .list-col-mock .col-model-detail .stat-failed { color: #dc2626; }
+        .list-col-mock .col-model-detail .stat-zero { color: #cbd5e1; font-weight: 400; }
+        .list-col-mock .col-model-detail .stat-plan { color: #64748b; font-weight: 600; }
+        .list-col-mock .col-model-detail .stat-approved { color: #2563eb; }
+        .list-col-mock .col-model-detail .col-stage-flow { display: inline-flex; align-items: center; gap: 6px; }
+        .list-col-mock .col-model-detail .col-stage-flow .stage-arrow { color: #cbd5e1; font-size: 9px; }
+        .list-col-mock .col-model-detail .col-stage-flow .stat-na { color: #cbd5e1; font-weight: 400; }
+
+        /* S13 Tab 4/5 per-model 链路流转行 */
+        .list-col-mock .col-model-flow { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; }
+        .list-col-mock .col-model-flow .mini-pill { min-width: 36px; justify-content: center; }
+        .list-col-mock .col-model-flow .stage-plan { color: #64748b; }
+        .list-col-mock .col-model-flow .stage-generated { color: #16a34a; }
+        .list-col-mock .col-model-flow .stage-reviewed { color: #2563eb; }
+        .list-col-mock .col-model-flow .stage-dash { color: #cbd5e1; font-weight: 400; }
+
+        /* S10 Tab筛选条 mock（匹配生产真实搜索条样式 v2）*/
+        .filter-bar-mock { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; }
+        .filter-bar-mock .filter-label { font-size: 12px; color: #475569; font-weight: 500; white-space: nowrap; }
+        .filter-bar-mock .filter-search-wrap { flex: 1; min-width: 0; }
+        .filter-bar-mock .filter-search-input { width: 100%; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; outline: none; background: white; color: #475569; }
+        .filter-bar-mock .filter-search-input::placeholder { color: #94a3b8; }
+        .filter-bar-mock .filter-search-input:focus { border-color: #3b82f6; }
+        .filter-bar-mock .filter-btn { padding: 5px 12px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; color: #475569; cursor: pointer; background: white; white-space: nowrap; transition: all 0.15s; }
+        .filter-bar-mock .filter-btn:hover { background: #f8fafc; }
+        .filter-bar-mock .filter-btn-primary { background: #3b82f6; border-color: #3b82f6; color: white; }
+        .filter-bar-mock .filter-btn-primary:hover { background: #2563eb; border-color: #2563eb; }
+        .filter-bar-mock .filter-item { padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; color: #475569; cursor: pointer; display: inline-flex; align-items: center; background: white; white-space: nowrap; gap: 4px; }
+        .filter-bar-mock .filter-item-new { background: #eff6ff; border-color: #3b82f6; color: #1d4ed8; font-weight: 600; position: relative; }
+        .filter-bar-mock .filter-item-new::after { content: '新增'; position: absolute; top: -7px; right: -10px; background: #3b82f6; color: white; font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 700; }
+        .filter-bar-mock .filter-item-count { background: #3b82f6; color: white; font-size: 10px; padding: 1px 5px; border-radius: 8px; font-weight: 700; min-width: 14px; text-align: center; }
+
+        /* S10 模型 dropdown mock */
+        .filter-dropdown-mock { display: inline-block; padding: 6px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); min-width: 180px; }
+        .filter-dropdown-mock .dropdown-item { display: flex; align-items: center; padding: 7px 10px; font-size: 12px; cursor: pointer; border-radius: 3px; }
+        .filter-dropdown-mock .dropdown-item:hover { background: #f1f5f9; }
+        .filter-dropdown-mock .dropdown-item.selected { background: #eff6ff; }
+        .filter-dropdown-mock .dropdown-item i { font-size: 12px; }
+
+        /* S11 Tab123 配置信息列 单独示意（不再带 基本信息/任务状态/商品文本 等无关列） */
+        .config-col-only-mock { border: 1px solid #e5e7eb; border-radius: 8px; background: white; padding: 14px 16px; max-width: 280px; }
+        .config-col-only-mock .list-col-label { margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+
+<!-- Toast -->
+<div id="toast" class="toast"><i class="fa-solid fa-circle-check"></i><span id="toast-text">操作成功</span></div>
+
+<div class="layout">
+    <!-- ============================================================ 左侧导航 -->
+    <aside class="side-nav">
+        <div class="side-nav-header">
+            <div class="brand"><i class="fa-solid fa-wand-magic-sparkles"></i>AI生图-多模型并行</div>
+            <div class="sub">产品设计稿</div>
+        </div>
+        <nav class="py-2">
+            <div class="nav-item active" data-target="s-1"><span class="nav-num">1</span>顶部额度栏</div>
+
+            <div class="nav-group-title">抽屉变体</div>
+            <div class="nav-item" data-target="s-2"><span class="nav-num">2</span>D1 新增抽屉 ★</div>
+            <div class="nav-item" data-target="s-3"><span class="nav-num">3</span>D2 编辑抽屉 <span style="color:#dc2626;">⚠</span></div>
+            <div class="nav-item" data-target="s-4"><span class="nav-num">4</span>D3 查看抽屉</div>
+
+            <div class="nav-group-title">字段与类型适配</div>
+            <div class="nav-item" data-target="s-5"><span class="nav-num">5</span>LinkFox 专属字段</div>
+
+            <div class="nav-group-title">弹窗变体</div>
+            <div class="nav-item" data-target="s-6"><span class="nav-num">6</span>M1 批量导入</div>
+            <div class="nav-item" data-target="s-7"><span class="nav-num">7</span>M2 批量修改</div>
+            <div class="nav-item" data-target="s-8"><span class="nav-num">8</span>M3 提交校验</div>
+
+            <div class="nav-group-title">实现注意</div>
+            <div class="nav-item" data-target="s-9"><span class="nav-num">9</span>Tab5 复制 / 重跑</div>
+
+            <div class="nav-group-title">列表层</div>
+            <div class="nav-item" data-target="s-10"><span class="nav-num">10</span>筛选 · 模型筛选项</div>
+            <div class="nav-item" data-target="s-11"><span class="nav-num">11</span>Tab123 配置列</div>
+            <div class="nav-item" data-target="s-12"><span class="nav-num">12</span>Tab 2 生成进度</div>
+            <div class="nav-item" data-target="s-13"><span class="nav-num">13</span>Tab 3 生成结果概览</div>
+            <div class="nav-item" data-target="s-14"><span class="nav-num">14</span>Tab 4/5 全链路概览</div>
+
+            <div class="nav-group-title">工作台</div>
+            <div class="nav-item" data-target="s-15"><span class="nav-num">15</span>L2 审核工作台</div>
+            <div class="nav-item" data-target="s-16"><span class="nav-num">16</span>L3 顶部模型 Tag</div>
+            <div class="nav-item" data-target="s-17"><span class="nav-num">17</span>L3 LinkFox 专属字段</div>
+        </nav>
+        </aside>
+
+    <!-- ============================================================ 右侧主内容 -->
+    <main class="main-area">
+        <div class="page-container">
+            <div class="page-title-line">
+                AI生图-多模型并行需求
+            </div>
+            <h1 class="page-title">产品设计稿</h1>
+            <p class="page-sub">
+                本需求包含<strong>美工版和运营版</strong>，均在现有功能基础上扩展三模型并行能力（新增 <strong>自研</strong> + <strong>阿里绘蛙</strong>），已梳理出共 <strong>17 项改动点</strong>。每个改动点附<span class="version-chip v1" style="vertical-align:1px;">现状</span> / <span class="version-chip v2" style="vertical-align:1px;">本次新增</span>对照展示。
+            </p>
+
+            <!-- ==================== S1 顶部额度栏 ==================== -->
+            <section id="s-1" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">1</span>
+                    <span class="section-title">顶部额度栏 · 三模型横向</span>
+                    <p class="section-desc">模块头右上角。彩色圆点 + 模型全称 + 数值。</p>
+                </div>
+                <div class="section-body">
+                    <!-- 现状 -->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v1">现状</span> · 单模型对照</div>
+                        <div class="demo-frame">
+                            <div class="frame-tab">模块头</div>
+                            <div class="frame-body">
+                                <div class="inline-flex items-center space-x-2 text-sm bg-blue-50 text-blue-700 px-3 py-2 rounded-lg border border-blue-100">
+                                    <i class="fa-solid fa-coins text-blue-500"></i>
+                                    <span class="font-medium text-xs">今日额度:</span>
+                                    <span class="font-bold font-mono text-base">150<span class="text-xs text-blue-400 mx-1">/</span>200</span>
+                                    <span class="text-xs bg-white px-1.5 rounded border border-blue-200 text-blue-500">LinkFox</span>
+                                    <button class="text-blue-500 ml-1"><i class="fa-solid fa-rotate-right text-xs"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 本次新增 - 多模型并行 -->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v2">本次新增</span> · 多模型并行</div>
+                        <div class="demo-frame">
+                            <div class="frame-tab">模块头</div>
+                            <div class="frame-body">
+                                <div class="quota-header-bar">
+                                    <i class="fa-solid fa-coins qh-coin"></i>
+                                    <span class="qh-label">今日额度</span>
+                                    <span class="qh-sep"></span>
+                                    <span class="qh-model"><span class="qh-dot" data-color="blue"></span><span class="qh-name">LinkFox</span><span class="qh-val">150/200</span></span>
+                                    <span class="qh-model"><span class="qh-dot" data-color="green"></span><span class="qh-name">自研</span><span class="qh-val">800/1000</span></span>
+                                    <span class="qh-model"><span class="qh-dot" data-color="orange"></span><span class="qh-name">阿里绘蛙</span><span class="qh-val">150/200</span></span>
+                                    <span class="qh-refresh"><i class="fa-solid fa-rotate-right"></i></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+<!-- ==================== S2 D1 新增任务抽屉 ==================== -->
+            <section id="s-2" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">2 ★</span>
+                    <span class="section-title">D1 · 新增任务抽屉（含交互矩阵）</span>
+                    <p class="section-desc">用户从 Tab1 列表点"新增任务"时触发。</p>
+                </div>
+                <div class="section-body">
+<!-- 现状对照 sub-section -->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v1">现状</span> · phase 1 单模型抽屉</div>
+                        <div class="text-[11px] text-slate-500 mb-3">phase 1 抽屉形态——单 LinkFox pill、纵向类型列表。先看现状再看下面本次新增的多模型 D1 改造。</div>
+                        <div class="drawer-mock">
+                            <div class="drawer-body">
+                                <div class="legacy-section-head">
+                                    <div class="legacy-title">模型供应商 <span class="legacy-subtitle">(二期扩展)</span></div>
+                                    <div class="model-pill active readonly" data-color="blue">
+                                        <i class="fa-solid fa-check check"></i>
+                                        <i class="fa-solid fa-xmark xmark"></i>
+                                        <span>LinkFox</span>
+                                    </div>
+                                </div>
+                                <div class="legacy-rows">
+                                    <div class="legacy-row">
+                                        <span class="legacy-label">场景图<span class="legacy-short">(缩写: 场景)</span></span>
+                                        <div class="legacy-input-wrap"><input type="number" value="3" min="0" max="6"><span class="legacy-unit">张</span></div>
+                                    </div>
+                                    <div class="legacy-row">
+                                        <span class="legacy-label">特写图-白底<span class="legacy-short">(缩写: 白特)</span></span>
+                                        <div class="legacy-input-wrap"><input type="number" value="0" min="0" max="4"><span class="legacy-unit">张</span></div>
+                                    </div>
+                                    <div class="legacy-row">
+                                        <span class="legacy-label">特写图-非白底<span class="legacy-short">(缩写: 特写)</span></span>
+                                        <div class="legacy-input-wrap"><input type="number" value="2" min="0" max="2"><span class="legacy-unit">张</span></div>
+                                    </div>
+                                    <div class="legacy-row">
+                                        <span class="legacy-label">卖点图<span class="legacy-short">(缩写: 卖点)</span></span>
+                                        <div class="legacy-input-wrap"><input type="number" value="2" min="0" max="2"><span class="legacy-unit">张</span></div>
+                                    </div>
+                                    <div class="legacy-row">
+                                        <span class="legacy-label">标准普通A+图<span class="legacy-short">(缩写: 标普A+)</span> <i class="fa-regular fa-circle-question text-slate-400 text-xs ml-0.5"></i></span>
+                                        <div class="legacy-input-wrap"><input type="number" value="7" min="0" max="8"><span class="legacy-unit">张</span></div>
+                                    </div>
+                                </div>
+                                <div class="legacy-summary">
+                                    <span class="text-slate-600"><i class="fa-solid fa-circle-info text-slate-400 mr-1"></i>计划总张数：<strong>14</strong> 张</span>
+                                    <span class="text-blue-600 font-bold">今日剩余额度：150 张</span>
+                                </div>
+                            </div>
+                            <div class="drawer-footer">
+                                <button class="btn-default">取消</button>
+                                <button class="btn-default" style="border-color:#bfdbfe;color:#1d4ed8;background:#eff6ff;">保存为待提交</button>
+                                <button class="btn-primary">保存并提交生图</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 本次新增 sub-section（含可交互多模型矩阵） -->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v2">本次新增</span> · D1 多模型抽屉（可交互）</div>
+                                            <div class="drawer-mock">
+                        <div class="drawer-header">
+                            <div class="drawer-title">
+                                <i class="fa-solid fa-plus-circle"></i>
+                                <span>新增生图任务</span>
+                                <span class="drawer-badge">D1</span>
+                            </div>
+                            <button class="drawer-close"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div class="drawer-body">
+                            <!-- 模型与数量配置（可交互矩阵） -->
+                            <div class="matrix-wrap">
+                                <div class="matrix-title">
+                                    <div class="title-left"><span class="dot"></span><span>模型与数量配置</span></div>
+                                    <div class="actions">
+                                        <button class="quick-action" onclick="liveMatrix.fillByDefault()"><i class="fa-solid fa-magic-wand-sparkles"></i>按默认填充</button>
+                                        <button class="quick-action" onclick="liveMatrix.clearAll()"><i class="fa-solid fa-eraser"></i>清零</button>
+                                    </div>
+                                </div>
+                                <div class="pill-row">
+                                    <div class="pill-row-label"><i class="fa-solid fa-circle-check text-[10px] mr-1"></i>启用模型</div>
+                                    <div id="live-pills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+                                </div>
+                                <div class="matrix-table-wrap">
+                                    <table class="config-matrix" id="live-matrix"></table>
+                                </div>
+                                <div class="matrix-summary-bar">
+                                    <div class="matrix-total">
+                                        <i class="fa-solid fa-layer-group text-blue-400"></i>
+                                        <span class="total-label">总计划</span>
+                                        <strong id="live-total">0</strong>
+                                        <span class="unit">张</span>
+                                    </div>
+                                    <div class="quota-recap">
+                                        <span class="label">今日额度核算</span>
+                                        <div id="live-quota" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        
+                        <div class="drawer-footer">
+                            <button class="btn-default">取消</button>
+                            <button class="btn-default" style="border-color:#bfdbfe;color:#1d4ed8;background:#eff6ff;" onclick="liveMatrix.handleSaveDraft()">保存为待提交</button>
+                            <button class="btn-primary" id="live-submit" onclick="liveMatrix.handleSubmit()"><i class="fa-solid fa-rocket mr-1.5"></i>保存并提交生图</button>
+                        </div>
+                    </div>
+                    </div>
+
+                    <div class="section-note info">
+                        <i class="fa-solid fa-list-check mr-1"></i>
+                        <strong>关键流程：</strong>① 矩阵默认只开 LinkFox + 数值 = admin max；② 用户可启用其他模型，启用时自动按默认值填充；③ 点"保存并提交"走 M3 校验额度；④ <strong>若某模型未在 admin 配置过额度，对应所有图片类型默认 max = 0</strong>。
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==================== S3 D2 编辑任务抽屉 · 超 max 红警 ==================== -->
+            <section id="s-3" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">3</span>
+                    <span class="section-title">D2 · 编辑任务抽屉（含超 max 红警特殊态）</span>
+                    <p class="section-desc">用户编辑已存在但未提交的任务时触发。<strong>关键差异 vs D1：</strong>已有数据回填；如果 admin 改过配置导致原存值 &gt; 当前 max，触发红警强制调整。</p>
+                </div>
+                <div class="section-body">
+                    <!-- 现状对照 sub-section -->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v1">现状</span> · phase 1 编辑抽屉</div>
+                        <div class="text-[11px] text-slate-500 mb-3">单 LinkFox 抽屉，已有数据回填，左下 &lt; &gt; 浏览相邻 SKU。</div>
+                        <div class="drawer-mock">
+                            <div class="drawer-body">
+                                <div class="legacy-section-head">
+                                    <div class="legacy-title">模型供应商 <span class="legacy-subtitle">(二期扩展)</span></div>
+                                    <div class="model-pill active readonly" data-color="blue">
+                                        <i class="fa-solid fa-check check"></i>
+                                        <i class="fa-solid fa-xmark xmark"></i>
+                                        <span>LinkFox</span>
+                                    </div>
+                                </div>
+                                <div class="legacy-rows">
+                                    <div class="legacy-row"><span class="legacy-label">场景图<span class="legacy-short">(缩写: 场景)</span></span><div class="legacy-input-wrap"><input type="number" value="6" min="0" max="6"><span class="legacy-unit">张</span></div></div>
+                                    <div class="legacy-row"><span class="legacy-label">特写图-白底<span class="legacy-short">(缩写: 白特)</span></span><div class="legacy-input-wrap"><input type="number" value="0" min="0" max="4"><span class="legacy-unit">张</span></div></div>
+                                    <div class="legacy-row"><span class="legacy-label">特写图-非白底<span class="legacy-short">(缩写: 特写)</span></span><div class="legacy-input-wrap"><input type="number" value="2" min="0" max="2"><span class="legacy-unit">张</span></div></div>
+                                    <div class="legacy-row"><span class="legacy-label">卖点图<span class="legacy-short">(缩写: 卖点)</span></span><div class="legacy-input-wrap"><input type="number" value="2" min="0" max="2"><span class="legacy-unit">张</span></div></div>
+                                    <div class="legacy-row"><span class="legacy-label">标准普通A+图<span class="legacy-short">(缩写: 标普A+)</span></span><div class="legacy-input-wrap"><input type="number" value="5" min="0" max="8"><span class="legacy-unit">张</span></div></div>
+                                </div>
+                                <div class="legacy-summary">
+                                    <span class="text-slate-600"><i class="fa-solid fa-circle-info text-slate-400 mr-1"></i>计划总张数：<strong>15</strong> 张</span>
+                                    <span class="text-blue-600 font-bold">今日剩余额度：150 张</span>
+                                </div>
+                            </div>
+                            <div class="drawer-footer with-nav">
+                                <div class="drawer-nav">
+                                    <div class="nav-btns">
+                                        <button class="nav-btn"><i class="fa-solid fa-chevron-left"></i></button>
+                                        <button class="nav-btn active"><i class="fa-solid fa-chevron-right"></i></button>
+                                    </div>
+                                    <span class="nav-label">切换自动保存</span>
+                                </div>
+                                <div class="drawer-footer-right">
+                                    <button class="btn-default">取消</button>
+                                    <button class="btn-default" style="border-color:#bfdbfe;color:#1d4ed8;background:#eff6ff;">保存为待提交</button>
+                                    <button class="btn-primary">保存并提交生图</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 本次新增 sub-section -->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v2">本次新增</span> · D2 多模型编辑（可交互）</div>
+                                        <div class="drawer-mock">
+                        <div class="drawer-header">
+                            <div class="drawer-title">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                                <span>编辑生图任务</span>
+                                <span class="drawer-badge" style="background:#fef3c7;color:#92400e;">D2</span>
+                                <span class="text-[11px] font-normal text-slate-500 ml-2 font-mono">T20260101-0014</span>
+                            </div>
+                            <button class="drawer-close"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div class="drawer-body">
+
+                            <div class="matrix-wrap">
+                                <div class="matrix-title">
+                                    <div class="title-left"><span class="dot"></span><span>模型与数量配置</span></div>
+                                    <div class="actions">
+                                        <button class="quick-action" onclick="editMatrix.fillByDefault()"><i class="fa-solid fa-magic-wand-sparkles"></i>按默认填充</button>
+                                        <button class="quick-action" onclick="editMatrix.clearAll()"><i class="fa-solid fa-eraser"></i>清零</button>
+                                    </div>
+                                </div>
+                                <div class="pill-row">
+                                    <div class="pill-row-label"><i class="fa-solid fa-circle-check text-[10px] mr-1"></i>启用模型</div>
+                                    <div id="edit-pills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+                                </div>
+                                <div class="matrix-table-wrap">
+                                    <table class="config-matrix" id="edit-matrix"></table>
+                                </div>
+                                <div class="matrix-summary-bar">
+                                    <div class="matrix-total">
+                                        <i class="fa-solid fa-layer-group text-blue-400"></i>
+                                        <span class="total-label">总计划</span>
+                                        <strong id="edit-total">0</strong>
+                                        <span class="unit">张</span>
+                                    </div>
+                                    <div class="quota-recap">
+                                        <span class="label">今日额度核算</span>
+                                        <div id="edit-quota" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="drawer-footer with-nav">
+                            <div class="drawer-nav">
+                                <div class="nav-btns">
+                                    <button class="nav-btn"><i class="fa-solid fa-chevron-left"></i></button>
+                                    <button class="nav-btn active"><i class="fa-solid fa-chevron-right"></i></button>
+                                </div>
+                                <span class="nav-label">切换自动保存</span>
+                            </div>
+                            <div class="drawer-footer-right">
+                                <button class="btn-default">取消</button>
+                                <button class="btn-default" style="border-color:#bfdbfe;color:#1d4ed8;background:#eff6ff;" onclick="editMatrix.handleSaveDraft()">保存为待提交</button>
+                                <button class="btn-primary" id="edit-submit" onclick="editMatrix.handleSubmit()"><i class="fa-solid fa-rocket mr-1.5"></i>保存并提交生图</button>
+                            </div>
+                        </div>
+                    </div>
+                    </div>
+
+                    <div class="section-note">
+                        <i class="fa-solid fa-lightbulb mr-1"></i>
+                        <strong>规则：</strong>红色 cell = 超出当前 admin max（"原存值 &gt; 现 max"的特殊态）；<strong>不自动截断</strong>，保留用户原值供自行调整；点击"保存"或"保存并提交生图"时校验，提示"数量超过上限"。
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==================== S4 D3 查看任务抽屉 ==================== -->
+            <section id="s-4" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">4</span>
+                    <span class="section-title">D3 · 查看任务抽屉（只读）</span>
+                    <p class="section-desc">用户从列表点查看任务时触发。所有信息只读，底部仅"关闭"按钮。矩阵只渲染该任务实际启用的模型。</p>
+                </div>
+                <div class="section-body">
+                    <!-- 现状对照 sub-section -->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v1">现状</span> · phase 1 查看抽屉</div>
+                        <div class="text-[11px] text-slate-500 mb-3">单 LinkFox 只读，左下 &lt; &gt; 浏览相邻任务，仅"关闭"按钮。</div>
+                        <div class="drawer-mock">
+                            <div class="drawer-body">
+                                <div class="legacy-section-head">
+                                    <div class="legacy-title">模型供应商 <span class="legacy-subtitle">(二期扩展)</span></div>
+                                    <div class="model-pill active readonly" data-color="blue">
+                                        <i class="fa-solid fa-check check"></i>
+                                        <i class="fa-solid fa-xmark xmark"></i>
+                                        <span>LinkFox</span>
+                                    </div>
+                                </div>
+                                <div class="legacy-rows">
+                                    <div class="legacy-row"><span class="legacy-label">场景图<span class="legacy-short">(缩写: 场景)</span></span><div class="legacy-input-wrap"><input type="number" value="6" readonly><span class="legacy-unit">张</span></div></div>
+                                    <div class="legacy-row"><span class="legacy-label">特写图-白底<span class="legacy-short">(缩写: 白特)</span></span><div class="legacy-input-wrap"><input type="number" value="4" readonly><span class="legacy-unit">张</span></div></div>
+                                    <div class="legacy-row"><span class="legacy-label">特写图-非白底<span class="legacy-short">(缩写: 特写)</span></span><div class="legacy-input-wrap"><input type="number" value="2" readonly><span class="legacy-unit">张</span></div></div>
+                                    <div class="legacy-row"><span class="legacy-label">卖点图<span class="legacy-short">(缩写: 卖点)</span></span><div class="legacy-input-wrap"><input type="number" value="2" readonly><span class="legacy-unit">张</span></div></div>
+                                    <div class="legacy-row"><span class="legacy-label">标准普通A+图<span class="legacy-short">(缩写: 标普A+)</span></span><div class="legacy-input-wrap"><input type="number" value="5" readonly><span class="legacy-unit">张</span></div></div>
+                                </div>
+                                <div class="legacy-summary">
+                                    <span class="text-slate-600"><i class="fa-solid fa-circle-info text-slate-400 mr-1"></i>实际生成：<strong>19</strong> 张</span>
+                                    <span class="text-slate-500">已消耗额度：19 张</span>
+                                </div>
+                            </div>
+                            <div class="drawer-footer with-nav">
+                                <div class="drawer-nav">
+                                    <div class="nav-btns">
+                                        <button class="nav-btn"><i class="fa-solid fa-chevron-left"></i></button>
+                                        <button class="nav-btn active"><i class="fa-solid fa-chevron-right"></i></button>
+                                    </div>
+                                    <span class="nav-label">切换自动保存</span>
+                                </div>
+                                <div class="drawer-footer-right">
+                                    <button class="btn-default">关闭</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 本次新增 sub-section -->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v2">本次新增</span> · D3 多模型查看（只读）</div>
+                                        <div class="drawer-mock">
+                        <div class="drawer-header">
+                            <div class="drawer-title">
+                                <i class="fa-solid fa-eye"></i>
+                                <span>查看任务详情</span>
+                                <span class="drawer-badge" style="background:#f1f5f9;color:#64748b;">D3</span>
+                                <span class="text-[11px] font-normal text-slate-500 ml-2 font-mono">T20260101-0099</span>
+                            </div>
+                            <button class="drawer-close"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div class="drawer-body">
+                            <div class="matrix-wrap">
+                                <div class="matrix-title">
+                                    <div class="title-left"><span class="dot"></span><span>模型与数量配置</span></div>
+                                    <div class="text-[10px] text-slate-400" style="font-style:italic;">只读 · 仅显示该任务实际启用的模型</div>
+                                </div>
+                                <div class="pill-row">
+                                    <div class="pill-row-label"><i class="fa-solid fa-circle-check text-[10px] mr-1"></i>启用模型</div>
+                                    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                                        <div class="model-pill active readonly" data-color="blue"><i class="fa-solid fa-check check"></i><i class="fa-solid fa-xmark xmark"></i><span>LinkFox</span></div>
+                                        <div class="model-pill active readonly" data-color="orange"><i class="fa-solid fa-check check"></i><i class="fa-solid fa-xmark xmark"></i><span>阿里绘蛙</span></div>
+                                    </div>
+                                </div>
+                                <div class="matrix-table-wrap">
+                                    <table class="config-matrix">
+                                        <thead><tr>
+                                            <th class="first-col">图片类型</th>
+                                            <th class="col-model-head"><div class="head-stack"><span class="model-short-chip" data-color="blue">LF</span><span class="model-name-full">LinkFox</span></div></th>
+                                            <th class="col-model-head"><div class="head-stack"><span class="model-short-chip" data-color="orange">绘蛙</span><span class="model-name-full">阿里绘蛙</span></div></th>
+                                        </tr></thead>
+                                        <tbody>
+                                            <tr><td class="row-label">场景图<span class="row-short">场景</span></td><td><div class="cell-wrap"><input type="number" value="6" readonly><span class="max-hint">≤6</span></div></td><td><div class="cell-wrap"><input type="number" value="6" readonly><span class="max-hint">≤6</span></div></td></tr>
+                                            <tr><td class="row-label">特写图-白底<span class="row-short">白特</span></td><td><div class="cell-wrap"><input type="number" value="4" readonly><span class="max-hint">≤4</span></div></td><td><div class="cell-wrap"><input type="number" value="0" readonly><span class="max-hint zero-max">≤0</span></div></td></tr>
+                                            <tr><td class="row-label">特写图-非白底<span class="row-short">特写</span></td><td><div class="cell-wrap"><input type="number" value="2" readonly><span class="max-hint">≤2</span></div></td><td><div class="cell-wrap"><input type="number" value="2" readonly><span class="max-hint">≤2</span></div></td></tr>
+                                            <tr><td class="row-label">卖点图<span class="row-short">卖点</span></td><td><div class="cell-wrap"><input type="number" value="2" readonly><span class="max-hint">≤2</span></div></td><td><div class="cell-wrap"><input type="number" value="2" readonly><span class="max-hint">≤2</span></div></td></tr>
+                                            <tr><td class="row-label">标准普通A+图<span class="row-short">标普A+</span> <i class="fa-regular fa-circle-question text-slate-400 text-[10px] ml-0.5"></i></td><td><div class="cell-wrap"><input type="number" value="6" readonly><span class="max-hint">≤8</span></div></td><td><div class="cell-wrap"><input type="number" value="0" readonly><span class="max-hint zero-max">≤0</span></div></td></tr>
+                                            <tr class="summary-row"><td class="row-label">单模型小计</td><td><span class="col-subtotal">20</span></td><td><span class="col-subtotal">10</span></td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="matrix-summary-bar">
+                                    <div class="matrix-total"><i class="fa-solid fa-layer-group text-blue-400"></i><span class="total-label">总计划</span><strong>30</strong><span class="unit">张</span></div>
+                                    <div class="quota-recap"><span class="label">今日额度核算</span><span class="quota-item"><span class="k">LF:</span><span class="v">20/150</span></span><span class="quota-item"><span class="k">绘蛙:</span><span class="v">10/200</span></span></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="drawer-footer with-nav">
+                            <div class="drawer-nav">
+                                <div class="nav-btns">
+                                    <button class="nav-btn"><i class="fa-solid fa-chevron-left"></i></button>
+                                    <button class="nav-btn active"><i class="fa-solid fa-chevron-right"></i></button>
+                                </div>
+                                <span class="nav-label">切换自动保存</span>
+                            </div>
+                            <div class="drawer-footer-right">
+                                <button class="btn-default">关闭</button>
+                            </div>
+                        </div>
+                    </div>
+                    </div>
+
+                    <div class="section-note info">
+                        <i class="fa-solid fa-info-circle mr-1"></i>
+                        <strong>关键差异 vs D1/D2：</strong>① 矩阵只渲染该任务实际启用的模型列；② 底部按钮仅"关闭"（无保存动作）；③ 左下角 &lt; &gt; 可在多个任务间切换浏览。
+                    </div>
+                </div>
+            </section>
+
+            
+            <!-- ==================== S5 LinkFox 专属字段与类型 · 多模型适配 ==================== -->
+            <section id="s-5" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">5</span>
+                    <span class="section-title">LinkFox 专属字段与类型 · 多模型适配</span>
+                    <p class="section-desc">phase 1 抽屉中已有 <strong>3 个 LinkFox 专属字段</strong>（生成图片语言、卖点图排版版式、A+图排版版式）和 <strong>1 个 LinkFox 专属图片类型</strong>（标准普通A+图）。本期启用多模型时，需要在抽屉这些位置追加兼容备注/约束，让用户清晰知晓选了自研/绘蛙时哪些不生效。</p>
+                </div>
+                <div class="section-body">
+
+                    <!-- Sub-section 1: 三个 LinkFox 专属字段 -->
+                    <div class="sub-section">
+                        <div class="sub-section-title">3 个 LinkFox 专属字段 · 兼容备注</div>
+                        <div class="text-[11px] text-slate-500 mb-3">下方三个字段在多模型态下需追加 helper 文案说明适用范围。文案位置：紧贴字段下方、灰底浅蓝色 info icon。</div>
+
+                        <div class="space-y-3">
+                            <!-- 字段 1: 生成图片语言 -->
+                            <div class="field-spec-block">
+                                <label class="field-spec-label"><span class="text-red-500">*</span>生成图片语言:</label>
+                                <div class="field-spec-note">
+                                    <i class="fa-solid fa-circle-info text-blue-500 mr-1"></i>
+                                    <strong>多模型适配：</strong>自研、阿里绘蛙仅支持英语；选其他语言时仅 LinkFox 生效。
+                                </div>
+                                <div class="field-spec-fake-select"><span class="text-slate-400">请选择语言</span><i class="fa-solid fa-chevron-down text-slate-400 text-[10px]"></i></div>
+                            </div>
+
+                            <!-- 字段 2: 卖点图排版版式 -->
+                            <div class="field-spec-block">
+                                <label class="field-spec-label">卖点图排版版式 <span class="text-blue-500 text-[11px]">(填写说明)</span>:</label>
+                                <div class="field-spec-note">
+                                    <i class="fa-solid fa-circle-info text-blue-500 mr-1"></i>
+                                    <strong>多模型适配：</strong>该字段仅 LinkFox 使用；自研、阿里绘蛙忽略此字段。
+                                </div>
+                                <div class="field-spec-fake-textarea">&nbsp;</div>
+                            </div>
+
+                            <!-- 字段 3: A+图排版版式 -->
+                            <div class="field-spec-block">
+                                <label class="field-spec-label">A+图排版版式 <span class="text-blue-500 text-[11px]">(填写说明)</span>:</label>
+                                <div class="field-spec-note">
+                                    <i class="fa-solid fa-circle-info text-blue-500 mr-1"></i>
+                                    <strong>多模型适配：</strong>该字段仅 LinkFox 使用；自研、阿里绘蛙忽略此字段。
+                                </div>
+                                <div class="field-spec-fake-textarea">&nbsp;</div>
+                            </div>
+                        </div>
+
+                        <div class="section-note">
+                            <i class="fa-solid fa-shield-halved mr-1"></i>
+                            <strong>实现注意（已有校验，勿遗漏）：</strong>卖点图排版版式 / A+图排版版式 phase 1 已有校验——非必填，可留空；若填写则为英文逗号分隔的多个数字 id，且 id 数量需与 LinkFox 对应图片数量（卖点图 / 标普A+图）保持一致。校验细节用户已通过"填写说明"超链接帮助文档知悉，UI 上无需重复展示，但多模型矩阵实现时务必沿用。
+                        </div>
+                    </div>
+
+                    <!-- Sub-section 2: 1 个 LinkFox 专属图片类型 · 标准普通A+图 -->
+                    <div class="sub-section">
+                        <div class="sub-section-title">1 个 LinkFox 专属图片类型 · 标准普通A+图</div>
+                        <div class="text-[11px] text-slate-500 mb-3">直接更新该字段标签旁 <i class="fa-regular fa-circle-question text-slate-400 mx-0.5"></i> icon 的 tooltip 文案，告知用户：仅 LinkFox 支持 + 实际尺寸说明。</div>
+
+                        <div class="tooltip-demo-container">
+                            <div class="tooltip-label-row">
+                                <span class="tooltip-label">标准普通A+图 <span class="text-slate-400 text-[11px] font-normal">(缩写: 标普A+)</span></span>
+                                <i class="fa-regular fa-circle-question text-slate-400 cursor-pointer"></i>
+                            </div>
+                            <div class="tooltip-bubble">
+                                <div class="tooltip-bubble-arrow"></div>
+                                对应亚马逊后台普通A+模块中最小尺寸为 970*600 的图，<strong>目前仅 LinkFox 支持</strong>，生成的图实际尺寸为 2624*1632，会等比放大近三倍使得展示效果更清晰更优。
+                            </div>
+                        </div>
+
+                        <div class="section-note">
+                            <i class="fa-solid fa-shield-halved mr-1"></i>
+                            <strong>实现注意（仅 spec 备注，UI 无需展示）：</strong>本期我在配置时会先暂将自研、阿里绘蛙的"标普A+图" admin max 配为 0 → 矩阵 cell 显示 ≤0、不可输入。后续两模型确认接口支持后，调整 admin max 即可放开（无需改代码）。
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- ==================== S6 M1 · 批量导入 ==================== -->
+            <section id="s-6" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">6</span>
+                    <span class="section-title">M1 · 批量导入</span>
+                    <p class="section-desc">用户在 Tab1 列表点"批量导入"触发。Modal 内含 SKU/ASIN 文本输入区 + 默认生图配置（一次性应用到全部导入 SKU）。<strong>关键差异：</strong>模型供应商部分由抽屉的多模型矩阵组件复用承载。</p>
+                </div>
+                <div class="section-body">
+                    <!-- 现状对照 sub-section（双版本 side-by-side）-->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v1">现状</span> · phase 1 批量导入（双版本并排）</div>
+                        <div class="text-[11px] text-slate-500 mb-3">phase 1 生产环境实际有两个版本——<strong>美工版用系统 SKU（4 类图片，无标普A+）</strong> 和 <strong>运营版用店铺 ASIN（5 类图片）</strong>。两版本的模型供应商部分均为单 LinkFox（跟抽屉现状一致），下方并排对照复刻。</div>
+                        <div class="modal-pair">
+
+                        <!-- 美工版 -->
+                        <div>
+                            <div class="modal-version-label">
+                                <span class="v-chip-meigong">美工版</span>
+                                <span class="v-subtitle">系统 SKU · 4 类图片（无标普A+）</span>
+                            </div>
+                        <div class="modal-mock" style="max-width:780px;">
+                            <div class="modal-header">
+                                <div class="modal-title">批量导入系统 SKU</div>
+                                <button class="text-slate-400"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="text-[12px] font-semibold text-slate-700 mb-2">输入系统 SKU <span class="text-slate-400 font-normal text-[11px]">(一行一个, 最多50行)</span></div>
+                                <textarea class="legacy-textarea" readonly placeholder="输入系统 SKU&#10;一行一个, 最多50行"></textarea>
+                                <div class="text-right text-[11px] text-slate-400 mt-1">已输入: 0 行</div>
+
+                                <div class="legacy-section-head" style="margin-top: 14px;">
+                                    <div class="legacy-title">默认生图配置 <span class="legacy-subtitle">(二期扩展)</span></div>
+                                    <div class="model-pill active readonly" data-color="blue">
+                                        <i class="fa-solid fa-check check"></i>
+                                        <i class="fa-solid fa-xmark xmark"></i>
+                                        <span>LinkFox</span>
+                                    </div>
+                                </div>
+                                <div class="legacy-rows-grid">
+                                    <div class="legacy-row-grid"><span class="legacy-label">场景图</span><input type="number" value="8" readonly></div>
+                                    <div class="legacy-row-grid"><span class="legacy-label">特写图-白底</span><input type="number" value="0" readonly></div>
+                                    <div class="legacy-row-grid"><span class="legacy-label">特写图-非白底</span><input type="number" value="0" readonly></div>
+                                    <div class="legacy-row-grid"><span class="legacy-label">卖点图</span><input type="number" value="5" readonly></div>
+                                </div>
+
+                                <div class="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 flex items-center gap-2">
+                                    <i class="fa-regular fa-lightbulb"></i>
+                                    <span>提示: 导入后任务状态为"待完善"，请在列表补充参考图后提交。</span>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button class="btn-default" style="padding:6px 12px;font-size:12px;">取消</button>
+                                <button class="btn-primary" style="padding:6px 12px;font-size:12px;">确认导入</button>
+                            </div>
+                        </div>
+
+                        </div>
+                        <!-- 运营版 -->
+                        <div>
+                            <div class="modal-version-label">
+                                <span class="v-chip-yunying">运营版</span>
+                                <span class="v-subtitle">店铺 ASIN · 5 类图片（含标普A+）</span>
+                            </div>
+                        <div class="modal-mock" style="max-width:780px;">
+                            <div class="modal-header">
+                                <div class="modal-title">批量导入店铺ASIN</div>
+                                <button class="text-slate-400"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="text-[12px] font-semibold text-slate-700 mb-2">输入店铺ASIN <span class="text-slate-400 font-normal text-[11px]">(一行一个, 最多50行)</span></div>
+                                <textarea class="legacy-textarea" readonly placeholder="输入店铺+ASIN（中间空格分割）&#10;例如：Amazon-Z01792-US BOFMKSGYRM&#10;一行一个, 最多50行"></textarea>
+                                <div class="text-right text-[11px] text-slate-400 mt-1">已输入: 0 行</div>
+
+                                <div class="legacy-section-head" style="margin-top: 14px;">
+                                    <div class="legacy-title">默认生图配置 <span class="legacy-subtitle">(二期扩展)</span></div>
+                                    <div class="model-pill active readonly" data-color="blue">
+                                        <i class="fa-solid fa-check check"></i>
+                                        <i class="fa-solid fa-xmark xmark"></i>
+                                        <span>LinkFox</span>
+                                    </div>
+                                </div>
+                                <div class="legacy-rows-grid">
+                                    <div class="legacy-row-grid"><span class="legacy-label">场景图</span><input type="number" value="3" readonly></div>
+                                    <div class="legacy-row-grid"><span class="legacy-label">特写图-白底</span><input type="number" value="0" readonly></div>
+                                    <div class="legacy-row-grid"><span class="legacy-label">特写图-非白底</span><input type="number" value="2" readonly></div>
+                                    <div class="legacy-row-grid"><span class="legacy-label">卖点图</span><input type="number" value="2" readonly></div>
+                                    <div class="legacy-row-grid"><span class="legacy-label">标准普通A+图</span><input type="number" value="7" readonly></div>
+                                </div>
+
+                                <div class="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 flex items-center gap-2">
+                                    <i class="fa-regular fa-lightbulb"></i>
+                                    <span>提示: 导入后任务状态若为"待完善"，请编辑补充商品图文信息后提交。</span>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button class="btn-default" style="padding:6px 12px;font-size:12px;">取消</button>
+                                <button class="btn-primary" style="padding:6px 12px;font-size:12px;">确认导入</button>
+                            </div>
+                        </div>
+                        </div>
+                        </div>
+                    </div>                    <!-- 本次新增 sub-section（双版本 side-by-side） -->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v2">本次新增</span> · M1 多模型批量导入（双版本并排）</div>
+                        <div class="text-[11px] text-slate-500 mb-3">模型供应商部分换成<strong>多模型矩阵组件</strong>，与抽屉的本次新增完全一致（可交互）。下方两版本并排对照。</div>
+                        <div class="modal-pair">
+                            <!-- 美工版 -->
+                            <div>
+                                <div class="modal-version-label">
+                                    <span class="v-chip-meigong">美工版</span>
+                                    <span class="v-subtitle">系统 SKU · 4 类图片</span>
+                                </div>
+                                <div class="modal-mock">
+                                    <div class="modal-header">
+                                        <div class="modal-title">批量导入系统 SKU</div>
+                                        <button class="text-slate-400"><i class="fa-solid fa-xmark"></i></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div class="text-[12px] font-semibold text-slate-700 mb-2">输入系统 SKU <span class="text-slate-400 font-normal text-[11px]">(一行一个, 最多50行)</span></div>
+                                        <textarea class="legacy-textarea" readonly>SK20240108001
+SK20240108002
+SK20240108003
+... (47 行省略)</textarea>
+                                        <div class="text-right text-[11px] text-slate-400 mt-1">已输入: <strong>50</strong> 行</div>
+
+                                        <div class="matrix-wrap" style="margin-top: 14px;">
+                                            <div class="matrix-title">
+                                                <div class="title-left"><span class="dot"></span><span>模型与数量配置</span></div>
+                                                <div class="actions">
+                                                    <button class="quick-action" onclick="mbg.fillByDefault()"><i class="fa-solid fa-magic-wand-sparkles"></i>按默认填充</button>
+                                                    <button class="quick-action" onclick="mbg.clearAll()"><i class="fa-solid fa-eraser"></i>清零</button>
+                                                </div>
+                                            </div>
+                                            <div class="pill-row">
+                                                <div class="pill-row-label"><i class="fa-solid fa-circle-check text-[10px] mr-1"></i>启用模型</div>
+                                                <div id="mbg-pills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+                                            </div>
+                                            <div class="matrix-table-wrap">
+                                                <table class="config-matrix" id="mbg-matrix"></table>
+                                            </div>
+                                        </div>
+
+                                        <div class="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 flex items-center gap-2">
+                                            <i class="fa-regular fa-lightbulb"></i>
+                                            <span>提示: 导入后任务状态为"待完善"，请在列表补充参考图后提交。</span>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button class="btn-default" style="padding:6px 12px;font-size:12px;">取消</button>
+                                        <button class="btn-primary" style="padding:6px 12px;font-size:12px;" onclick="mbg.handleSubmit()"><i class="fa-solid fa-rocket mr-1.5"></i>确认导入</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 运营版 -->
+                            <div>
+                                <div class="modal-version-label">
+                                    <span class="v-chip-yunying">运营版</span>
+                                    <span class="v-subtitle">店铺 ASIN · 5 类图片</span>
+                                </div>
+                                <div class="modal-mock">
+                                    <div class="modal-header">
+                                        <div class="modal-title">批量导入店铺ASIN</div>
+                                        <button class="text-slate-400"><i class="fa-solid fa-xmark"></i></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div class="text-[12px] font-semibold text-slate-700 mb-2">输入店铺ASIN <span class="text-slate-400 font-normal text-[11px]">(一行一个, 最多50行)</span></div>
+                                        <textarea class="legacy-textarea" readonly>Amazon-Z01792-US BOFMKSGYRM
+Amazon-Z01792-US BO5KX8M9P2L
+Amazon-Z01792-US BOR4JT7Y2QH
+... (47 行省略)</textarea>
+                                        <div class="text-right text-[11px] text-slate-400 mt-1">已输入: <strong>50</strong> 行</div>
+
+                                        <div class="matrix-wrap" style="margin-top: 14px;">
+                                            <div class="matrix-title">
+                                                <div class="title-left"><span class="dot"></span><span>模型与数量配置</span></div>
+                                                <div class="actions">
+                                                    <button class="quick-action" onclick="mby.fillByDefault()"><i class="fa-solid fa-magic-wand-sparkles"></i>按默认填充</button>
+                                                    <button class="quick-action" onclick="mby.clearAll()"><i class="fa-solid fa-eraser"></i>清零</button>
+                                                </div>
+                                            </div>
+                                            <div class="pill-row">
+                                                <div class="pill-row-label"><i class="fa-solid fa-circle-check text-[10px] mr-1"></i>启用模型</div>
+                                                <div id="mby-pills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+                                            </div>
+                                            <div class="matrix-table-wrap">
+                                                <table class="config-matrix" id="mby-matrix"></table>
+                                            </div>
+                                        </div>
+
+                                        <div class="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 flex items-center gap-2">
+                                            <i class="fa-regular fa-lightbulb"></i>
+                                            <span>提示: 导入后任务状态若为"待完善"，请编辑补充商品图文信息后提交。</span>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button class="btn-default" style="padding:6px 12px;font-size:12px;">取消</button>
+                                        <button class="btn-primary" style="padding:6px 12px;font-size:12px;" onclick="mby.handleSubmit()"><i class="fa-solid fa-rocket mr-1.5"></i>确认导入</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section-note">
+                        <i class="fa-solid fa-lightbulb mr-1"></i>
+                        <strong>本弹窗关键点：</strong>① SKU/ASIN 文本输入区 + "已输入 N 行" 计数（美工版 SKU + 4 类图片 / 运营版 ASIN + 5 类图片，双版本并排）；② 模型供应商部分换成<strong>多模型矩阵组件</strong>（与 D1/D2 完全一致，可交互）；③ 点击"确认导入"仅做<strong>基础校验</strong>（启用模型 / 配置数量 / 超 admin max），<strong>不校验每日额度</strong>——额度校验在后续生图任务实际提交时才发生。
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==================== S7 M2 · 批量修改 ==================== -->
+            <section id="s-7" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">7</span>
+                    <span class="section-title">M2 · 批量修改（"留空 = 不改"语义）</span>
+                    <p class="section-desc">用户在列表勾选 N 个 SKU 后点"批量修改"触发。<strong>关键差异（核心 UX）：</strong>cell <strong>留空 = 不修改</strong>（保持每 SKU 各自原值）/ <strong>填 0 = 不生成</strong> / 填 ≥1 = 改为该值。三种状态视觉强区分。</p>
+                </div>
+                <div class="section-body">
+                    <!-- 现状对照 sub-section（单运营版示意 + 文字备注美工版差异）-->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v1">现状</span> · phase 1 批量修改</div>
+                        <div class="text-[11px] text-slate-500 mb-3">phase 1 批量修改弹窗（运营版示意）—— 单 LinkFox + 5 类图片纵向列表 + 留空/填值/填 0 三态语义。<strong>美工版与运营版几乎一致，仅少"标准普通A+图"一行（4 类图片）</strong>，故本对照只展示运营版。</div>
+                        <div class="modal-mock" style="max-width:780px;">
+                            <div class="modal-header">
+                                <div class="modal-title">批量修改配置 (已选 2 项)</div>
+                                <button class="text-slate-400"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="legacy-section-head">
+                                    <div class="legacy-title">模型供应商 <span class="legacy-subtitle">(二期扩展)</span></div>
+                                    <div class="model-pill active readonly" data-color="blue">
+                                        <i class="fa-solid fa-check check"></i>
+                                        <i class="fa-solid fa-xmark xmark"></i>
+                                        <span>LinkFox</span>
+                                    </div>
+                                </div>
+                                <div class="legacy-rows">
+                                    <div class="legacy-row"><span class="legacy-label">场景图<span class="legacy-short">(缩写: 场景)</span></span><div class="legacy-input-wrap"><input type="number" placeholder="不改" readonly style="background:#f9fafb;color:#94a3b8;"></div></div>
+                                    <div class="legacy-row"><span class="legacy-label">特写图-白底<span class="legacy-short">(缩写: 白特)</span></span><div class="legacy-input-wrap"><input type="number" placeholder="不改" readonly style="background:#f9fafb;color:#94a3b8;"></div></div>
+                                    <div class="legacy-row"><span class="legacy-label">特写图-非白底<span class="legacy-short">(缩写: 特写)</span></span><div class="legacy-input-wrap"><input type="number" placeholder="不改" readonly style="background:#f9fafb;color:#94a3b8;"></div></div>
+                                    <div class="legacy-row"><span class="legacy-label">卖点图<span class="legacy-short">(缩写: 卖点)</span></span><div class="legacy-input-wrap"><input type="number" placeholder="不改" readonly style="background:#f9fafb;color:#94a3b8;"></div></div>
+                                    <div class="legacy-row"><span class="legacy-label">标准普通A+图<span class="legacy-short">(缩写: 标普A+)</span></span><div class="legacy-input-wrap"><input type="number" placeholder="不改" readonly style="background:#f9fafb;color:#94a3b8;"></div></div>
+                                </div>
+                                <div class="text-center text-[11px] text-slate-400 mt-3">留空表示不修改，填 0 表示不生成</div>
+                            </div>
+                            <div class="modal-footer">
+                                <button class="btn-default" style="padding:6px 12px;font-size:12px;">取消</button>
+                                <button class="btn-primary" style="padding:6px 12px;font-size:12px;">应用修改</button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 本次新增 sub-section（单运营版） -->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v2">本次新增</span> · M2 多模型批量修改</div>
+                        <div class="text-[11px] text-slate-500 mb-3">模型供应商部分换成<strong>多模型矩阵组件</strong>，复用 D1/D2/M1 同款交互。沿用现状 M2 的"留空 = 不改"三态语义，保留 cell 三色视觉区分。本演示采用<strong>运营版（5 类）</strong>，美工版仅少"标准普通A+图"行。</div>
+                        <div class="modal-mock" style="max-width:820px;">
+                            <div class="modal-header">
+                                <div class="modal-title">批量修改配置 (已选 12 项)</div>
+                                <button class="text-slate-400"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="matrix-wrap">
+                                    <div class="matrix-title">
+                                        <div class="title-left"><span class="dot"></span><span>模型与数量配置</span></div>
+                                        <div class="actions">
+                                            <button class="quick-action" onclick="m2Matrix.fillByDefault()"><i class="fa-solid fa-magic-wand-sparkles"></i>按默认填充</button>
+                                            <button class="quick-action" onclick="m2Matrix.clearAll()"><i class="fa-solid fa-eraser"></i>清零</button>
+                                            <button class="quick-action" onclick="m2Matrix.resetAll()"><i class="fa-solid fa-rotate-left"></i>留空</button>
+                                        </div>
+                                    </div>
+                                    <div class="pill-row">
+                                        <div class="pill-row-label"><i class="fa-solid fa-circle-check text-[10px] mr-1"></i>影响模型</div>
+                                        <div id="m2-pills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+                                        <span class="text-[10px] text-slate-400 ml-2">默认全启用，避免漏改</span>
+                                    </div>
+                                    <div class="matrix-table-wrap">
+                                        <table class="config-matrix" id="m2-matrix"></table>
+                                    </div>
+                                </div>
+                                <div class="text-center text-[11px] text-slate-400 mt-3">留空表示不修改，填 0 表示不生成</div>
+                            </div>
+                            <div class="modal-footer">
+                                <button class="btn-default" style="padding:6px 12px;font-size:12px;">取消</button>
+                                <button class="btn-primary" style="padding:6px 12px;font-size:12px;" onclick="m2Matrix.handleSubmit()"><i class="fa-solid fa-check mr-1.5"></i>应用修改</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    </div>
+
+                    <div class="section-note">
+                        <i class="fa-solid fa-eye mr-1"></i>
+                        <strong>三种 cell 状态视觉区分：</strong>
+                        <span class="ml-2"><span style="display:inline-block;width:10px;height:10px;background:#eff6ff;border:1px solid #3b82f6;vertical-align:middle;margin-right:3px;"></span>蓝边蓝底 = 改为非 0 值</span> ｜
+                        <span><span style="display:inline-block;width:10px;height:10px;background:#fef2f2;border:1px solid #dc2626;vertical-align:middle;margin-right:3px;"></span>红边红底 = 改为 0（清空）</span> ｜
+                        <span><span style="display:inline-block;width:10px;height:10px;background:#f9fafb;border:1px solid #d1d5db;vertical-align:middle;margin-right:3px;"></span>灰底斜体"不改" = 保持原值</span>
+                    </div>
+                </div>
+            </section>
+<!-- ==================== S8 M3 提交校验 ==================== -->
+            <section id="s-8" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">8</span>
+                    <span class="section-title">M3 · 提交确认 · 多模型逐行校验</span>
+                    <p class="section-desc">单条/批量提交前的额度校验。表格逐行展示每个模型的本次消耗 / 剩余额度 / 状态；任一不足整体阻断。</p>
+                </div>
+                <div class="section-body">
+                    <!-- 现状对照 sub-section -->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v1">现状</span> · phase 1 提交校验（单 LinkFox）</div>
+                        <div class="text-[11px] text-slate-500 mb-3">phase 1 单 LinkFox 时的 M3：通过态浅绿背景 / 阻断态浅灰汇总 + 红色错误列表。</div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <!-- 通过态 -->
+                            <div>
+                                <div class="text-[10px] font-bold text-emerald-700 uppercase tracking-wider mb-1.5">通过态</div>
+                                <div class="modal-mock">
+                                    <div class="modal-body">
+                                        <h3 class="text-sm font-bold text-slate-800 mb-3"><i class="fa-solid fa-rocket text-green-600 mr-2"></i>确认提交生图任务?</h3>
+                                        <div class="bg-emerald-50 border border-emerald-200 rounded p-3 text-xs mb-3">
+                                            <div class="flex justify-between items-center mb-1.5"><span class="text-slate-600">即将提交任务数:</span><strong class="text-slate-800">1 个</strong></div>
+                                            <div class="flex justify-between items-center mb-1.5"><span class="text-slate-600">计划生成图片数:</span><strong class="text-slate-800">18 张</strong></div>
+                                            <div class="flex justify-between items-center"><span class="text-slate-600">计划消耗额度:</span><span class="flex items-center gap-1"><strong class="text-blue-600 font-mono">18 / 150</strong><span class="text-[9px] px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-blue-700 font-semibold">LinkFox</span></span></div>
+                                        </div>
+                                        <div class="text-[11px] text-slate-500"><i class="fa-solid fa-circle-info text-slate-400 mr-1"></i>提交后任务将进入排队生成，期间不可编辑。</div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button class="btn-default" style="padding:6px 12px;font-size:12px;">取消</button>
+                                        <button class="btn-primary" style="background:#16a34a;padding:6px 12px;font-size:12px;">确认提交</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 阻断态 -->
+                            <div>
+                                <div class="text-[10px] font-bold text-red-700 uppercase tracking-wider mb-1.5">阻断态</div>
+                                <div class="modal-mock">
+                                    <div class="modal-body">
+                                        <h3 class="text-sm font-bold text-slate-800 mb-3"><i class="fa-solid fa-rocket text-slate-400 mr-2"></i>确认提交生图任务?</h3>
+                                        <div class="bg-slate-100 border border-slate-200 rounded p-3 text-xs mb-3">
+                                            <div class="flex justify-between items-center mb-1.5"><span class="text-slate-600">即将提交任务数:</span><strong class="text-slate-800">5 个</strong></div>
+                                            <div class="flex justify-between items-center mb-1.5"><span class="text-slate-600">计划生成图片数:</span><strong class="text-slate-800">170 张</strong></div>
+                                            <div class="flex justify-between items-center"><span class="text-slate-600">计划消耗额度:</span><span class="flex items-center gap-1"><strong class="text-red-600 font-mono">170 / 150</strong><span class="text-[9px] px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-blue-700 font-semibold">LinkFox</span></span></div>
+                                        </div>
+                                        <div class="bg-red-50 border border-red-200 rounded p-2.5 text-xs">
+                                            <div class="font-bold text-red-700 mb-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i>无法提交，请解决以下问题:</div>
+                                            <div class="text-red-700 leading-relaxed">1. 选中任务中包含 <strong>2 个</strong>"待完善"状态 (缺参考图/字段)。<br>2. 额度不足 (本次需 170, 今日剩余 150)。</div>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button class="btn-default" style="padding:6px 12px;font-size:12px;">关闭</button>
+                                        <button class="btn-primary" disabled style="padding:6px 12px;font-size:12px;background:#e5e7eb;color:#9ca3af;">确认提交</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 本次新增 sub-section -->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v2">本次新增</span> · M3 多模型逐行校验</div>
+                                            <div class="grid grid-cols-2 gap-4">
+                        <!-- 通过 -->
+                        <div>
+                            <div class="text-[11px] font-bold text-green-600 uppercase tracking-wider mb-2">情形 A · 额度充足</div>
+                            <div class="modal-mock">
+                                <div class="modal-body">
+                                    <h3 class="text-sm font-bold text-slate-800 mb-3"><i class="fa-solid fa-rocket text-green-600 mr-2"></i>确认提交生图任务？</h3>
+                                    <div class="bg-slate-50 rounded p-3 text-xs border border-slate-200 mb-3">
+                                        <div class="flex justify-between mb-1"><span>即将提交任务数:</span><strong>5 个</strong></div>
+                                        <div class="flex justify-between"><span>计划生成图片数:</span><strong>120 张</strong></div>
+                                    </div>
+                                    <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">各模型额度核算</div>
+                                    <table class="submit-check-table">
+                                        <thead><tr><th>模型</th><th>本次消耗</th><th>剩余额度</th><th>状态</th></tr></thead>
+                                        <tbody>
+                                            <tr><td><div class="model-cell"><span class="mini-pill" data-color="blue">LF</span>LinkFox</div></td><td class="qn">70</td><td class="qn text-green-600">150</td><td class="status-ok"><i class="fa-solid fa-check"></i></td></tr>
+                                            <tr><td><div class="model-cell"><span class="mini-pill" data-color="green">自研</span>自研</div></td><td class="qn">40</td><td class="qn text-green-600">800</td><td class="status-ok"><i class="fa-solid fa-check"></i></td></tr>
+                                            <tr><td><div class="model-cell"><span class="mini-pill" data-color="orange">绘蛙</span>阿里绘蛙</div></td><td class="qn">10</td><td class="qn text-green-600">150</td><td class="status-ok"><i class="fa-solid fa-check"></i></td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="modal-footer">
+                                    <button class="btn-default" style="padding:6px 12px;font-size:12px;">取消</button>
+                                    <button class="btn-primary" style="background:#16a34a;padding:6px 12px;font-size:12px;">确认提交</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 阻断 -->
+                        <div>
+                            <div class="text-[11px] font-bold text-red-600 uppercase tracking-wider mb-2">情形 B · 部分超额（精准指认）</div>
+                            <div class="modal-mock">
+                                <div class="modal-body">
+                                    <h3 class="text-sm font-bold text-slate-800 mb-3"><i class="fa-solid fa-rocket text-slate-400 mr-2"></i>确认提交生图任务？</h3>
+                                    <div class="bg-slate-50 rounded p-3 text-xs border border-slate-200 mb-3">
+                                        <div class="flex justify-between mb-1"><span>即将提交任务数:</span><strong>8 个</strong></div>
+                                        <div class="flex justify-between"><span>计划生成图片数:</span><strong>320 张</strong></div>
+                                    </div>
+                                    <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">各模型额度核算</div>
+                                    <table class="submit-check-table">
+                                        <thead><tr><th>模型</th><th>本次消耗</th><th>剩余额度</th><th>状态</th></tr></thead>
+                                        <tbody>
+                                            <tr class="danger"><td><div class="model-cell"><span class="mini-pill" data-color="blue">LF</span>LinkFox</div></td><td class="qn text-red-600">180</td><td class="qn text-red-600">150</td><td class="status-ng"><i class="fa-solid fa-xmark"></i></td></tr>
+                                            <tr><td><div class="model-cell"><span class="mini-pill" data-color="green">自研</span>自研</div></td><td class="qn">80</td><td class="qn text-green-600">800</td><td class="status-ok"><i class="fa-solid fa-check"></i></td></tr>
+                                            <tr class="danger"><td><div class="model-cell"><span class="mini-pill" data-color="orange">绘蛙</span>阿里绘蛙</div></td><td class="qn text-red-600">60</td><td class="qn text-red-600">45</td><td class="status-ng"><i class="fa-solid fa-xmark"></i></td></tr>
+                                        </tbody>
+                                    </table>
+                                    <div class="mt-3 p-2.5 bg-red-50 border border-red-200 rounded text-xs">
+                                        <div class="font-bold text-red-700 flex items-center gap-1"><i class="fa-solid fa-triangle-exclamation"></i>无法提交</div>
+                                        <ul class="list-disc list-inside text-red-600 text-[11px] mt-1 pl-1 space-y-0.5">
+                                            <li><strong>LinkFox</strong> 模型额度不足，本次需 180，今日剩余 150</li>
+                                            <li><strong>阿里绘蛙</strong> 模型额度不足，本次需 60，今日剩余 45</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button class="btn-default" style="padding:6px 12px;font-size:12px;">关闭</button>
+                                    <button class="btn-primary" disabled style="padding:6px 12px;font-size:12px;">确认提交</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    </div>
+
+                    <div class="section-note">
+                        <i class="fa-solid fa-circle-exclamation mr-1"></i>
+                        <strong>关键规则：</strong>报错文案使用模型<strong>全名</strong>，避免运营猜"LF 是什么"；表格行使用 缩写 mini-pill + 全名 同行的方式（既快速识别又保留完整称呼）。
+                    </div>
+                </div>
+            </section>
+
+
+            
+            <!-- ==================== S9 Tab5 复制 / 重跑 · 数据完整性 ==================== -->
+            <section id="s-9" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">9</span>
+                    <span class="section-title">Tab5 复制 / 重跑 · 数据完整性</span>
+                    <p class="section-desc">Tab5 任务列表的 复制 / 批量复制 / 重跑 主要是后端逻辑——本期新增多模型矩阵后，需明确这些操作必须整条原样复制全部数据，避免漏带 matrix 字段。</p>
+                </div>
+                <div class="section-body">
+                    <div class="sub-section">
+                        <div class="sub-section-title">实现注意（仅 spec 备注，UI 无需展示）</div>
+
+                        <div class="section-note">
+                            <i class="fa-solid fa-shield-halved mr-1"></i>
+                            <strong>核心规则 · 整条复制：</strong>单条复制 / 批量复制 / 重跑都必须将任务数据完整原样复制，包括启用模型列表、多模型矩阵全部 cell 数据、以及所有 LinkFox 专属字段（生成图片语言 / 卖点图排版版式 / A+图排版版式 / 该图对应卖点）。phase 1 现有逻辑只 copy LinkFox 单字段，本期若沿用旧逻辑未扩展到 matrix，会出现"复制后数据残缺"的隐性回归——务必扩展。
+                        </div>
+
+                        <div class="section-note" style="margin-top: 10px;">
+                            <i class="fa-solid fa-circle-info mr-1"></i>
+                            <strong>边界 · 不自动升级：</strong>复制 phase 1 单 LinkFox 老任务时，副本保持单 LinkFox 不变；<strong>不</strong>自动给副本加自研/绘蛙。用户如需多模型，可在副本编辑抽屉里手动启用。
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            
+            <!-- ==================== S10 Tab 1-5 筛选条件 · 加模型筛选项 ==================== -->
+            <section id="s-10" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">10</span>
+                    <span class="section-title">Tab 1-5 筛选条件 · 加模型筛选项</span>
+                    <p class="section-desc">5 个 Tab phase 1 实际只有"搜索条"（搜索 + 查询/重置）；本期统一在<strong>搜索框紧左侧</strong>新增 <code>[模型 ▾]</code> multi-select dropdown，"包含"语义。</p>
+                </div>
+                <div class="section-body">
+
+                    <!-- Sub-section 1: 筛选条 视觉对照（同行对照） -->
+                    <div class="sub-section">
+                        <div class="sub-section-title">筛选条 · 现状 / 本次新增 同行对照</div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2"><span class="version-chip v1">现状</span></div>
+                                <div class="filter-bar-mock">
+                                    <span class="filter-label">搜索:</span>
+                                    <div class="filter-search-wrap">
+                                        <input class="filter-search-input" placeholder="店铺 / ASIN / TaskID / BatchID">
+                                    </div>
+                                    <button class="filter-btn filter-btn-primary">查询</button>
+                                    <button class="filter-btn">重置</button>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-[11px] font-bold text-blue-600 uppercase tracking-wider mb-2"><span class="version-chip v2">本次新增</span></div>
+                                <div class="filter-bar-mock">
+                                    <div class="filter-item filter-item-new">
+                                        <span class="filter-item-label">模型</span>
+                                        <span class="filter-item-count">2</span>
+                                        <i class="fa-solid fa-chevron-down ml-1.5 text-[10px]"></i>
+                                    </div>
+                                    <span class="filter-label">搜索:</span>
+                                    <div class="filter-search-wrap">
+                                        <input class="filter-search-input" placeholder="店铺 / ASIN / TaskID / BatchID">
+                                    </div>
+                                    <button class="filter-btn filter-btn-primary">查询</button>
+                                    <button class="filter-btn">重置</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sub-section 2: dropdown 展开示意 -->
+                    <div class="sub-section">
+                        <div class="sub-section-title">[模型 ▾] 展开示意</div>
+                        <div class="text-[11px] text-slate-500 mb-3">multi-select：可勾选 1 个或多个；空选 = 全部不过滤。</div>
+                        <div class="filter-dropdown-mock">
+                            <div class="dropdown-item selected">
+                                <i class="fa-solid fa-square-check text-blue-500 mr-2"></i>
+                                <span class="mini-pill" data-color="blue">LinkFox</span>
+                            </div>
+                            <div class="dropdown-item selected">
+                                <i class="fa-solid fa-square-check text-blue-500 mr-2"></i>
+                                <span class="mini-pill" data-color="green">自研</span>
+                            </div>
+                            <div class="dropdown-item">
+                                <i class="fa-regular fa-square text-slate-300 mr-2"></i>
+                                <span class="mini-pill" data-color="orange">阿里绘蛙</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section-note">
+                        <i class="fa-solid fa-shield-halved mr-1"></i>
+                        <strong>实现注意（仅 spec 备注，UI 无需展示）：</strong>
+                        ① "<strong>包含</strong>"语义：选中的任意一个被任务启用即命中；
+                        ② 多选 OR 关系：选 LinkFox + 自研 = 任务启用任一即命中；
+                        ③ 默认空 = 全部任务，不过滤；
+                        ④ <strong>phase 1 单 LinkFox 老任务自动归为"含 LinkFox"</strong>——筛 LinkFox 时命中所有老任务 + 启用 LinkFox 的新任务。
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- ==================== S11 Tab123 配置信息列 ==================== -->
+            <section id="s-11" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">11</span>
+                    <span class="section-title">Tab123 配置信息列</span>
+                    <p class="section-desc">pill 行 → 总计划 → 类型 breakdown。</p>
+                </div>
+                <div class="section-body">
+
+                    <!-- Sub-section 1: 现状 vs 本次新增·标准态（同行对照） -->
+                    <div class="sub-section">
+                        <div class="sub-section-title">配置信息列 · 现状 / 本次新增 同行对照</div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2"><span class="version-chip v1">现状</span> · 单模型</div>
+                                <div class="config-col-only-mock">
+                                    <div class="list-col-label">配置信息</div>
+                                    <div class="text-xs">
+                                        <span class="text-blue-600 font-bold text-[11px]">LinkFox</span>
+                                        <div class="text-slate-600 mt-1">计划: 14 张</div>
+                                        <div class="text-[10px] text-slate-400 mt-0.5">场景:6 白特:4 特写:2 卖点:2</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-[11px] font-bold text-blue-600 uppercase tracking-wider mb-2"><span class="version-chip v2">本次新增</span> · 标准态（多模型）</div>
+                                <div class="config-col-only-mock">
+                                    <div class="list-col-label">配置信息</div>
+                                    <div class="text-xs">
+                                        <div class="flex flex-wrap gap-1 mb-1.5">
+                                            <span class="mini-pill" data-color="blue">LF · 14</span>
+                                            <span class="mini-pill" data-color="green">自研 · 8</span>
+                                            <span class="mini-pill" data-color="orange">绘蛙 · 10</span>
+                                        </div>
+                                        <div class="text-slate-700 font-bold">总计划: 32 张</div>
+                                        <div class="text-[10px] text-slate-400 mt-0.5">场景:16 白特:8 特写:6 卖点:2 标普A+:0</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sub-section 2: 本次新增·边界态（独立，含隐藏规则说明）-->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v2">本次新增</span> · 边界态（启用但全填 0 的模型不显示）</div>
+                        <div class="text-[11px] text-slate-500 mb-3">用户启用了三个模型，"自研"全填 0（软关闭）→ pill 行不展示自研，"总计划"只算实际产出的模型数。</div>
+                        <div class="config-col-only-mock">
+                            <div class="list-col-label">配置信息</div>
+                            <div class="text-xs">
+                                <div class="flex flex-wrap gap-1 mb-1.5">
+                                    <span class="mini-pill" data-color="blue">LF · 14</span>
+                                    <span class="mini-pill" data-color="orange">绘蛙 · 10</span>
+                                </div>
+                                <div class="text-slate-700 font-bold">总计划: 24 张</div>
+                                <div class="text-[10px] text-slate-400 mt-0.5">场景:12 白特:4 特写:4 卖点:4 标普A+:0</div>
+                            </div>
+                        </div>
+                        <div class="text-[11px] text-slate-500 mt-2 italic"><i class="fa-solid fa-eye-slash mr-1"></i>本例"自研"被隐去（详见下方规则 ②③）。</div>
+                    </div>
+
+                    <div class="section-note info">
+                        <i class="fa-solid fa-list-check mr-1"></i>
+                        <strong>聚合规则：</strong><br>
+                        ① <strong>类型层不隐藏 0</strong>：admin 配过的类型即便聚合值是 0 也显示<br>
+                        ② <strong>模型层隐藏全 0</strong>：用户启用了但全填 0 的模型不在 pill 行显示（"软关闭"）<br>
+                        ③ <strong>编辑态不应用以上规则</strong>：D1 / D2 抽屉中所有启用 pill 始终保留，避免编辑过程中 pill 突然消失
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==================== S12 Tab 2 生成进度列 ==================== -->
+            <section id="s-12" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">12</span>
+                    <span class="section-title">Tab 2 生成进度列</span>
+                    <p class="section-desc">进度条按聚合占比；4 个数字（计划/成功/生成中/失败）按聚合算；底部加 per-model 明细行，每行：模型 chip + <i class="fa-solid fa-check text-green-600 mx-0.5"></i>成功 + <i class="fa-solid fa-spinner text-purple-600 mx-0.5"></i>生成中 + <i class="fa-solid fa-xmark text-red-600 mx-0.5"></i>失败（icon + 数字）。</p>
+                </div>
+                <div class="section-body">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2"><span class="version-chip v1">现状</span></div>
+                            <div class="list-col-mock">
+                                <div class="col-title">生成进度</div>
+                                <div class="col-progress-bar"><div style="width: 40%;"></div></div>
+                                <div class="col-elapsed"><i class="fa-regular fa-clock mr-1"></i>已耗时: 35m 12s</div>
+                                <div class="col-stats">
+                                    <span class="col-stat-plan">计划:<strong>20</strong></span>
+                                    <span class="pipe">|</span>
+                                    <span class="col-stat-success">成功:<strong>8</strong></span>
+                                    <span class="pipe">|</span>
+                                    <span class="col-stat-running">生成中:<strong>5</strong></span>
+                                    <span class="pipe">|</span>
+                                    <span class="col-stat-failed">失败:<strong>7</strong></span>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-bold text-blue-600 uppercase tracking-wider mb-2"><span class="version-chip v2">本次新增</span></div>
+                            <div class="list-col-mock">
+                                <div class="col-title">生成进度</div>
+                                <div class="col-progress-bar"><div style="width: 72%;"></div></div>
+                                <div class="col-elapsed"><i class="fa-regular fa-clock mr-1"></i>已耗时: 35m 12s</div>
+                                <div class="col-stats">
+                                    <span class="col-stat-plan">计划:<strong>32</strong></span>
+                                    <span class="pipe">|</span>
+                                    <span class="col-stat-success">成功:<strong>23</strong></span>
+                                    <span class="pipe">|</span>
+                                    <span class="col-stat-running">生成中:<strong>7</strong></span>
+                                    <span class="pipe">|</span>
+                                    <span class="col-stat-failed">失败:<strong>2</strong></span>
+                                </div>
+                                <div class="col-model-detail-block">
+                                    <div class="col-model-detail">
+                                        <span class="mini-pill" data-color="blue">LF</span>
+                                        <span class="stat-icon-num stat-success"><i class="fa-solid fa-check"></i>14</span>
+                                        <span class="stat-icon-num stat-zero"><i class="fa-solid fa-spinner"></i>0</span>
+                                        <span class="stat-icon-num stat-zero"><i class="fa-solid fa-xmark"></i>0</span>
+                                    </div>
+                                    <div class="col-model-detail">
+                                        <span class="mini-pill" data-color="green">自研</span>
+                                        <span class="stat-icon-num stat-success"><i class="fa-solid fa-check"></i>5</span>
+                                        <span class="stat-icon-num stat-running"><i class="fa-solid fa-spinner"></i>2</span>
+                                        <span class="stat-icon-num stat-failed"><i class="fa-solid fa-xmark"></i>1</span>
+                                    </div>
+                                    <div class="col-model-detail">
+                                        <span class="mini-pill" data-color="orange">绘蛙</span>
+                                        <span class="stat-icon-num stat-success"><i class="fa-solid fa-check"></i>4</span>
+                                        <span class="stat-icon-num stat-running"><i class="fa-solid fa-spinner"></i>5</span>
+                                        <span class="stat-icon-num stat-failed"><i class="fa-solid fa-xmark"></i>1</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section-note">
+                        <i class="fa-solid fa-shield-halved mr-1"></i>
+                        <strong>实现注意（仅 spec 备注，UI 无需展示）：</strong>进度数字（计划 / 成功 / 生成中 / 失败）按"启用模型集合"聚合算；phase 1 老任务在新布局下 pill 行只显示 LinkFox 一个 chip；后端进度统计算法务必扩展到 matrix 全数据。
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==================== S13 Tab 3 生成结果概览列 ==================== -->
+            <section id="s-13" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">13</span>
+                    <span class="section-title">Tab 3 生成结果概览列</span>
+                    <p class="section-desc">主体保持 成功 / 失败 chip + 总耗时；数字按聚合算；底部加 per-model 明细行，每行：模型 chip + <i class="fa-solid fa-check text-green-600 mx-0.5"></i>成功 + <i class="fa-solid fa-xmark text-red-600 mx-0.5"></i>失败（直接看 per-model 成败质量，无需下钻 L2）。</p>
+                </div>
+                <div class="section-body">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2"><span class="version-chip v1">现状</span></div>
+                            <div class="list-col-mock">
+                                <div class="col-title">生成结果概览</div>
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="col-chip-success">成功: <strong>14</strong></span>
+                                    <span class="col-chip-fail">失败: <strong>2</strong></span>
+                                </div>
+                                <div class="col-elapsed"><i class="fa-regular fa-clock mr-1"></i>总耗时: 12m 30s</div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-bold text-blue-600 uppercase tracking-wider mb-2"><span class="version-chip v2">本次新增</span></div>
+                            <div class="list-col-mock">
+                                <div class="col-title">生成结果概览</div>
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="col-chip-success">成功: <strong>30</strong></span>
+                                    <span class="col-chip-fail">失败: <strong>2</strong></span>
+                                </div>
+                                <div class="col-elapsed"><i class="fa-regular fa-clock mr-1"></i>总耗时: 35m 12s</div>
+                                <div class="col-model-detail-block">
+                                    <div class="col-model-detail">
+                                        <span class="mini-pill" data-color="blue">LF</span>
+                                        <span class="stat-icon-num stat-success"><i class="fa-solid fa-check"></i>14</span>
+                                        <span class="stat-icon-num stat-zero"><i class="fa-solid fa-xmark"></i>0</span>
+                                    </div>
+                                    <div class="col-model-detail">
+                                        <span class="mini-pill" data-color="green">自研</span>
+                                        <span class="stat-icon-num stat-success"><i class="fa-solid fa-check"></i>8</span>
+                                        <span class="stat-icon-num stat-failed"><i class="fa-solid fa-xmark"></i>1</span>
+                                    </div>
+                                    <div class="col-model-detail">
+                                        <span class="mini-pill" data-color="orange">绘蛙</span>
+                                        <span class="stat-icon-num stat-success"><i class="fa-solid fa-check"></i>8</span>
+                                        <span class="stat-icon-num stat-failed"><i class="fa-solid fa-xmark"></i>1</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section-note">
+                        <i class="fa-solid fa-shield-halved mr-1"></i>
+                        <strong>实现注意（仅 spec 备注，UI 无需展示）：</strong>成功 / 失败数字按"启用模型集合"聚合算；phase 1 老任务在新布局下 pill 行只显示 LinkFox 一个 chip；后端结果统计算法务必扩展到 matrix 全数据。
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==================== S14 Tab 4/5 生图全链路概览列 ==================== -->
+            <section id="s-14" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">14</span>
+                    <span class="section-title">Tab 4/5 生图全链路概览列</span>
+                    <p class="section-desc">3 行键值结构保持；数字按聚合算；底部加 per-model 明细行，每行：模型 chip + 计划 → <i class="fa-solid fa-check text-green-600 mx-0.5"></i>生成成功 → <i class="fa-solid fa-thumbs-up text-blue-600 mx-0.5"></i>审核通过（icon + 数字串联流转）。per-model 行只显示成功数；失败 / 不通过总数在顶部聚合行。</p>
+                </div>
+                <div class="section-body">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2"><span class="version-chip v1">现状</span></div>
+                            <div class="list-col-mock">
+                                <div class="col-title">生图全链路概览</div>
+                                <div class="col-grid">
+                                    <div class="col-key">计划:</div>
+                                    <div class="col-val"><strong>20</strong>张</div>
+                                    <div class="col-key">生成:</div>
+                                    <div class="col-val"><span class="col-stat-success"><strong>12</strong></span> / <span class="col-stat-failed"><strong>8</strong>失败</span></div>
+                                    <div class="col-key">审核:</div>
+                                    <div class="col-val"><span class="col-stat-success"><strong>4</strong></span> / <span class="col-stat-failed"><strong>8</strong>不通过</span></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-bold text-blue-600 uppercase tracking-wider mb-2"><span class="version-chip v2">本次新增</span></div>
+                            <div class="list-col-mock">
+                                <div class="col-title">生图全链路概览</div>
+                                <div class="col-grid">
+                                    <div class="col-key">计划:</div>
+                                    <div class="col-val"><strong>32</strong>张</div>
+                                    <div class="col-key">生成:</div>
+                                    <div class="col-val"><span class="col-stat-success"><strong>20</strong></span> / <span class="col-stat-failed"><strong>12</strong>失败</span></div>
+                                    <div class="col-key">审核:</div>
+                                    <div class="col-val"><span class="col-stat-success"><strong>13</strong></span> / <span class="col-stat-failed"><strong>7</strong>不通过</span></div>
+                                </div>
+                                <div class="col-model-detail-block">
+                                    <div class="col-model-detail">
+                                        <span class="mini-pill" data-color="blue">LF</span>
+                                        <span class="col-stage-flow">
+                                            <span class="stat-icon-num stat-plan">14</span>
+                                            <i class="fa-solid fa-chevron-right stage-arrow"></i>
+                                            <span class="stat-icon-num stat-success"><i class="fa-solid fa-check"></i>12</span>
+                                            <i class="fa-solid fa-chevron-right stage-arrow"></i>
+                                            <span class="stat-icon-num stat-approved"><i class="fa-solid fa-thumbs-up"></i>8</span>
+                                        </span>
+                                    </div>
+                                    <div class="col-model-detail">
+                                        <span class="mini-pill" data-color="green">自研</span>
+                                        <span class="col-stage-flow">
+                                            <span class="stat-icon-num stat-plan">8</span>
+                                            <i class="fa-solid fa-chevron-right stage-arrow"></i>
+                                            <span class="stat-icon-num stat-zero"><i class="fa-solid fa-check"></i>0</span>
+                                            <i class="fa-solid fa-chevron-right stage-arrow"></i>
+                                            <span class="stat-na">—</span>
+                                        </span>
+                                    </div>
+                                    <div class="col-model-detail">
+                                        <span class="mini-pill" data-color="orange">绘蛙</span>
+                                        <span class="col-stage-flow">
+                                            <span class="stat-icon-num stat-plan">10</span>
+                                            <i class="fa-solid fa-chevron-right stage-arrow"></i>
+                                            <span class="stat-icon-num stat-success"><i class="fa-solid fa-check"></i>8</span>
+                                            <i class="fa-solid fa-chevron-right stage-arrow"></i>
+                                            <span class="stat-icon-num stat-approved"><i class="fa-solid fa-thumbs-up"></i>5</span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section-note">
+                        <i class="fa-solid fa-shield-halved mr-1"></i>
+                        <strong>实现注意（仅 spec 备注，UI 无需展示）：</strong>① 每行数字（计划 / 生成 / 审核）按"启用模型集合"聚合算；② phase 1 老任务在新布局下 per-model 行只显示 LinkFox 一行；③ <strong>边界 · 生成全失败：</strong>当某模型生成全失败时，per-model 行的审核位显示 <code>—</code>（与现状语义一致——0 = 审过但全没通过；— = 没东西可审）；④ 后端链路统计算法务必扩展到 matrix 全数据。
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==================== S15 L2 审核工作台 ==================== -->
+            <section id="s-15" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">15</span>
+                    <span class="section-title">L2 审核工作台</span>
+                    <p class="section-desc">L2 改造分两层：① <strong>分组头多模型微缩</strong>（中观分布）② <strong>卡片三色角标</strong>（微观溯源）。顶部审核状态条保持现状不变。</p>
+                </div>
+                <div class="section-body">
+                    <!-- 分组头多模型微缩 sub-section -->
+                    <div class="sub-section">
+                        <div class="sub-section-title">分组头多模型微缩（中观分布）</div>
+
+                        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2"><span class="version-chip v1">现状</span></div>
+                        <div class="group-header color-blue">
+                            <span class="group-name">场景图</span>
+                            <span class="mini-pill" data-color="blue">LinkFox</span>
+                            <span class="group-total">计划 <strong>8</strong>&nbsp;&nbsp;|&nbsp;&nbsp;<i class="fa-solid fa-check text-green-600 mr-1"></i><span class="text-green-600">生成成功 <strong>6</strong></span>&nbsp;&nbsp;|&nbsp;&nbsp;<i class="fa-solid fa-xmark text-red-500 mr-1"></i><span class="text-red-500">生成失败 <strong>2</strong></span></span>
+                        </div>
+
+                        <div class="text-[11px] font-bold text-blue-600 uppercase tracking-wider mb-2 mt-4"><span class="version-chip v2">本次新增</span></div>
+                        <div class="group-header color-blue">
+                            <span class="group-name">场景图</span>
+                            <span class="group-total">总计划 <strong>16</strong> 张</span>
+                            <span class="divider"></span>
+                            <div class="model-stats">
+                                <span class="model-stat"><span class="mini-pill" data-color="blue">LF</span>计划 6 / 成功 <span class="v-ok">6</span></span>
+                                <span class="model-stat"><span class="mini-pill" data-color="green">自研</span>计划 4 / 成功 <span class="v-ok">3</span> / 失败 <span class="v-ng">1</span></span>
+                                <span class="model-stat"><span class="mini-pill" data-color="orange">绘蛙</span>计划 6 / 成功 <span class="v-ok">5</span> / 失败 <span class="v-ng">1</span></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 卡片三色角标混排 sub-section -->
+                    <div class="sub-section">
+                        <div class="sub-section-title">卡片三色角标 · 多模型混排（微观溯源）</div>
+                        <p class="text-[11px] text-slate-500 mb-3">右上角彩色短名 chip 标识来源模型——三色一眼区分（LF 蓝 / 自研 绿 / 绘蛙 橙）。</p>
+
+                        <div class="grid grid-cols-3 gap-3" style="max-width: 540px;">
+                            <div class="audit-card">
+                                <div class="card-img" style="aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center;">
+                                    <span class="text-[11px] text-slate-400">场景图 #01</span>
+                                    <div class="badge-anchor"><span class="card-badge" data-color="blue">LF</span></div>
+                                </div>
+                            </div>
+                            <div class="audit-card">
+                                <div class="card-img" style="aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center;">
+                                    <span class="text-[11px] text-slate-400">场景图 #02</span>
+                                    <div class="badge-anchor"><span class="card-badge" data-color="green">自研</span></div>
+                                </div>
+                            </div>
+                            <div class="audit-card">
+                                <div class="card-img" style="aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center;">
+                                    <span class="text-[11px] text-slate-400">场景图 #03</span>
+                                    <div class="badge-anchor"><span class="card-badge" data-color="orange">绘蛙</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                                </div>
+            </section>
+
+            <!-- ==================== S16 L3 顶部 Tag ==================== -->
+            <section id="s-16" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">16</span>
+                    <span class="section-title">L3 沉浸式大屏 · 顶部模型 Tag</span>
+                    <p class="section-desc">大屏审图模式，顶部标题旁边的彩色 Tag。切图自动刷新。全名展示（空间够，且具备来源溯源功能）。</p>
+                </div>
+                <div class="section-body">
+                    <!-- 现状 -->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v1">现状</span> · 单 LinkFox</div>
+                        <div class="text-[11px] text-slate-500 mb-3">顶部居中：标题 + 模型 tag 紧贴并排。</div>
+                        <div class="l3-bar" style="justify-content: center; gap: 12px;">
+                            <div class="l3-title">场景图 #1 详情</div>
+                            <span class="l3-tag" data-color="blue"><i class="fa-solid fa-circle text-[6px] mr-1.5"></i>LinkFox</span>
+                        </div>
+                    </div>
+
+                    <!-- 本次新增 -->
+                    <div class="sub-section">
+                        <div class="sub-section-title"><span class="version-chip v2">本次新增</span> · 三种模型</div>
+                        <div class="text-[11px] text-slate-500 mb-3">新增自研、阿里绘蛙两个模型 tag，位置形态不变，仅颜色与名称根据来源切换。</div>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="l3-bar" style="justify-content: center; gap: 10px; padding: 10px 12px;">
+                                <div class="l3-title" style="font-size: 12px;">场景图 #1 详情</div>
+                                <span class="l3-tag" data-color="blue"><i class="fa-solid fa-circle text-[6px] mr-1.5"></i>LinkFox</span>
+                            </div>
+                            <div class="l3-bar" style="justify-content: center; gap: 10px; padding: 10px 12px;">
+                                <div class="l3-title" style="font-size: 12px;">场景图 #2 详情</div>
+                                <span class="l3-tag" data-color="green"><i class="fa-solid fa-circle text-[6px] mr-1.5"></i>自研</span>
+                            </div>
+                            <div class="l3-bar" style="justify-content: center; gap: 10px; padding: 10px 12px;">
+                                <div class="l3-title" style="font-size: 12px;">场景图 #3 详情</div>
+                                <span class="l3-tag" data-color="orange"><i class="fa-solid fa-circle text-[6px] mr-1.5"></i>阿里绘蛙</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==================== S17 L3 大屏 · LinkFox 专属字段适配 ==================== -->
+            <section id="s-17" class="section-card">
+                <div class="section-header">
+                    <span class="section-badge">17</span>
+                    <span class="section-title">L3 大屏 · LinkFox 专属字段适配</span>
+                    <p class="section-desc">L3 沉浸式大屏右侧信息栏 phase 1 已有 <strong>2 个 LinkFox 专属字段</strong>；本期启用多模型时需要在这两个位置追加备注/重命名。</p>
+                </div>
+                <div class="section-body">
+
+                    <!-- Sub-section 1: 该图对应卖点 -->
+                    <div class="sub-section">
+                        <div class="sub-section-title">字段 1: 该图对应卖点 · 兼容备注</div>
+                        <div class="text-[11px] text-slate-500 mb-3">该字段当前仅 LinkFox 提供；自研、阿里绘蛙暂无对应数据。</div>
+                        <div class="field-spec-block">
+                            <label class="field-spec-label">该图对应卖点:</label>
+                            <div class="field-spec-note">
+                                <i class="fa-solid fa-circle-info text-blue-500 mr-1"></i>
+                                <strong>多模型适配：</strong>该字段仅 LinkFox 提供；自研、阿里绘蛙暂无此字段。
+                            </div>
+                            <div class="field-spec-fake-textarea">多场景通用滤光贴</div>
+                        </div>
+                    </div>
+
+                    <!-- Sub-section 2: 第三方id -->
+                    <div class="sub-section">
+                        <div class="sub-section-title">字段 2: 第三方id · 改名 + 多模型 id 格式备注</div>
+                        <div class="text-[11px] text-slate-500 mb-3">字段名 "LinkFox任务id和图片id" 改为更通用的 <strong>"第三方id"</strong>——LinkFox 和阿里绘蛙都有 任务id+图片id 拼接格式，自研当前仅含任务id（图片id 缺失，已提需求）。</div>
+                        <div class="field-spec-block">
+                            <label class="field-spec-label">第三方id:</label>
+                            <div class="field-spec-note">
+                                <i class="fa-solid fa-circle-info text-blue-500 mr-1"></i>
+                                <strong>多模型适配：</strong>
+                                LinkFox、阿里绘蛙：<code>任务id_图片id</code>（下划线拼接）；
+                                自研：当前仅含任务id（图片id 缺失，已提需求）。
+                            </div>
+                            <div class="field-spec-fake-textarea" style="font-family: ui-monospace, 'SF Mono', Consolas, monospace;">2035630566517170176_70398078</div>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+        </div>
+    </main>
+</div>
+
+<script>
+// ======================================================================
+// 全局数据
+// ======================================================================
+const modelPool = [
+    { id: 'linkfox', name: 'LinkFox',  short: 'LF',   color: 'blue',   quota: 200, used: 50,  unlimited: false },
+    { id: 'ziyan',   name: '自研',     short: '自研', color: 'green',  quota: 1000, used: 200, unlimited: false },
+    { id: 'huiwa',   name: '阿里绘蛙', short: '绘蛙', color: 'orange', quota: 200, used: 0,   unlimited: false }
+];
+
+const imageTypes = [
+    { id: 'scene',      name: '场景图',         short: '场景' },
+    { id: 'whiteClose', name: '特写图-白底',    short: '白特' },
+    { id: 'close',      name: '特写图-非白底',  short: '特写' },
+    { id: 'selling',    name: '卖点图',         short: '卖点' },
+    { id: 'aplus',      name: '标准普通A+图',   short: '标普A+' }
+];
+
+// admin 配置表（默认值 = 最大值；0 = 不可用）
+// 模拟一种典型场景：阿里绘蛙整列只有场景图能用（部分项 0 = 部分能力受限）
+const adminConfig = {
+    linkfox: { scene: 6, whiteClose: 4, close: 2, selling: 2, aplus: 8 },
+    ziyan:   { scene: 4, whiteClose: 2, close: 2, selling: 0, aplus: 0 },
+    huiwa:   { scene: 6, whiteClose: 0, close: 0, selling: 0, aplus: 0 }
+};
+
+// 一种"模型整列被 admin 设为 0"的演示场景（用于停用 pill 演示）
+const adminConfigWithDisabled = {
+    linkfox: { scene: 6, whiteClose: 4, close: 2, selling: 2, aplus: 8 },
+    ziyan:   { scene: 4, whiteClose: 2, close: 2, selling: 0, aplus: 0 },
+    huiwa:   { scene: 0, whiteClose: 0, close: 0, selling: 0, aplus: 0 } // 阿里绘蛙整列 0
+};
+
+// ======================================================================
+// 通用工具
+// ======================================================================
+let toastTimer = null;
+function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    document.getElementById('toast-text').textContent = msg;
+    const icon = t.querySelector('i');
+    if (type === 'error') {
+        icon.className = 'fa-solid fa-circle-xmark';
+        t.classList.add('toast-error');
+    } else {
+        icon.className = 'fa-solid fa-circle-check';
+        t.classList.remove('toast-error');
+    }
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
+}
+
+function modelById(id) { return modelPool.find(m => m.id === id); }
+
+function isModelDisabledByAdmin(modelId, configTable) {
+    return imageTypes.every(t => (configTable[modelId] || {})[t.id] === 0 || (configTable[modelId] || {})[t.id] === undefined);
+}
+
+function computeSubtotal(values, modelId) {
+    let sum = 0;
+    imageTypes.forEach(t => {
+        const v = values[modelId] ? values[modelId][t.id] : 0;
+        sum += parseInt(v) || 0;
+    });
+    return sum;
+}
+
+// 左导航交互
+document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+        const target = document.getElementById(item.dataset.target);
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            item.classList.add('active');
+        }
+    });
+});
+const navLookup = {};
+document.querySelectorAll('.nav-item').forEach(n => { navLookup[n.dataset.target] = n; });
+window.addEventListener('scroll', () => {
+    const fromTop = window.scrollY + 100;
+    let currentId = null;
+    document.querySelectorAll('section[id^="s-"]').forEach(sec => {
+        if (sec.offsetTop <= fromTop) currentId = sec.id;
+    });
+    if (currentId && navLookup[currentId]) {
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        navLookup[currentId].classList.add('active');
+    }
+}, { passive: true });
+
+// ======================================================================
+// 共享：Pill / Matrix / Quota 渲染器
+// ======================================================================
+function pillHtml(m, opts = {}) {
+    const { active = false, readonly = false, onclick = '' } = opts;
+    const cls = ['model-pill'];
+    if (active) cls.push('active');
+    if (readonly) cls.push('readonly');
+    const onclickAttr = onclick ? `onclick="${onclick}"` : '';
+    return `
+        <div class="${cls.join(' ')}" data-color="${m.color}" data-model="${m.id}" ${onclickAttr}>
+            <i class="fa-solid fa-check check"></i>
+            <i class="fa-solid fa-xmark xmark"></i>
+            <span>${m.name}</span>
+        </div>
+    `;
+}
+
+function badgeStyle(color) {
+    return ({
+        blue:   'background:#dbeafe;color:#1d4ed8;',
+        green:  'background:#dcfce7;color:#15803d;',
+        orange: 'background:#ffedd5;color:#c2410c;'
+    })[color] || '';
+}
+
+function renderMatrixHtml(enabledModels, getValue, getMax, opts = {}) {
+    const { readonly = false, configTable = null, types = imageTypes, mode = 'edit' } = opts;
+
+    if (enabledModels.length === 0) {
+        return `<tbody><tr><td style="padding:28px;text-align:center;color:#94a3b8;font-size:12px;">请至少启用一个模型</td></tr></tbody>`;
+    }
+
+    // thead
+    let head = '<thead><tr><th class="first-col">图片类型</th>';
+    enabledModels.forEach(m => {
+        head += `<th class="col-model-head" data-model-col="${m.id}">
+            <div class="head-stack">
+                <span class="model-short-chip" data-color="${m.color}">${m.short}</span>
+                <span class="model-name-full">${m.name}</span>
+            </div>
+        </th>`;
+    });
+    head += '</tr></thead>';
+
+    // tbody
+    let body = '<tbody>';
+    types.forEach(t => {
+        const infoIcon = t.id === 'aplus' ? ' <i class="fa-regular fa-circle-question text-slate-400 text-[10px] ml-0.5"></i>' : '';
+        body += `<tr><td class="row-label">
+            ${t.name}<span class="row-short">${t.short}</span>${infoIcon}
+        </td>`;
+        enabledModels.forEach(m => {
+            const v = getValue(m.id, t.id);
+            const max = getMax ? getMax(m.id, t.id) : 999;
+            const isZeroMax = max === 0;
+            if (mode === 'modify') {
+                // M2 三态：留空 / 0 / ≥1 — placeholder=不改，下方显示 ≤N max-hint（与 D1/D2/M1 一致）
+                const isEmpty = v === '' || v === null || v === undefined;
+                body += `<td data-model-col="${m.id}">
+                    <div class="cell-wrap">
+                        <input type="number" min="0" max="${max}"
+                            data-model="${m.id}" data-type="${t.id}" data-max="${max}"
+                            placeholder="不改"
+                            value="${isEmpty ? '' : v}"
+                            class="m2-cell">
+                        <span class="max-hint ${isZeroMax ? 'zero-max' : ''}">≤${max}</span>
+                    </div>
+                </td>`;
+            } else {
+                body += `<td data-model-col="${m.id}">
+                    <div class="cell-wrap">
+                        <input type="number" min="0" max="${max}"
+                            data-model="${m.id}" data-type="${t.id}" data-max="${max}"
+                            value="${v}" ${readonly ? 'readonly' : ''}>
+                        <span class="max-hint ${isZeroMax ? 'zero-max' : ''}">≤${max}</span>
+                    </div>
+                </td>`;
+            }
+        });
+        body += '</tr>';
+    });
+
+    // summary row（modify 模式不需要小计）
+    if (mode !== 'modify') {
+        body += `<tr class="summary-row"><td class="row-label">单模型小计</td>`;
+        enabledModels.forEach(m => {
+            body += `<td data-model-col="${m.id}"><span class="col-subtotal" data-model-subtotal="${m.id}">0</span></td>`;
+        });
+        body += '</tr>';
+    }
+    body += '</tbody>';
+
+    return head + body;
+}
+
+function renderQuotaRecap(container, enabledModels, values, opts = {}) {
+    if (enabledModels.length === 0) {
+        container.innerHTML = '<span style="font-size:11px;color:#64748b;font-style:italic;">未启用任何模型</span>';
+        return;
+    }
+    const { showAsUsed = false } = opts;
+    container.innerHTML = enabledModels.map(m => {
+        const subtotal = computeSubtotal(values, m.id);
+        const remain = m.quota - m.used;
+        const isOver = subtotal > remain;
+        const valText = showAsUsed ? `${subtotal}` : `${subtotal}/${remain}`;
+        return `<span class="quota-item ${isOver ? 'danger' : ''}">
+            <span class="k">${m.short}:</span><span class="v">${valText}</span>
+        </span>`;
+    }).join('');
+}
+
+function updateSubtotals(tableEl, values, enabledModels) {
+    enabledModels.forEach(m => {
+        const el = tableEl.querySelector(`[data-model-subtotal="${m.id}"]`);
+        if (!el) return;
+        const newVal = computeSubtotal(values, m.id);
+        const oldVal = parseInt(el.textContent) || 0;
+        el.textContent = newVal;
+        const remain = m.quota - m.used;
+        const isOver = newVal > remain;
+        el.classList.toggle('over-quota', isOver);
+        if (newVal !== oldVal) {
+            el.classList.remove('number-pop');
+            void el.offsetWidth;
+            el.classList.add('number-pop');
+        }
+    });
+}
+
+// ======================================================================
+// S2.1 可交互完整版
+// ======================================================================
+const liveMatrix = (() => {
+    let currentScenario = 'normal'; // normal | disabled
+    const state = { enabled: {}, values: {} };
+    // 初始化
+    function init() {
+        modelPool.forEach(m => {
+            // 默认只开 LinkFox
+            state.enabled[m.id] = (m.id === 'linkfox');
+            state.values[m.id] = {};
+            imageTypes.forEach(t => {
+                state.values[m.id][t.id] = 0;
+            });
+        });
+        // 把启用的模型按 admin 默认值预填
+        modelPool.forEach(m => {
+            if (state.enabled[m.id]) {
+                imageTypes.forEach(t => {
+                    state.values[m.id][t.id] = currentConfig()[m.id]?.[t.id] || 0;
+                });
+            }
+        });
+    }
+
+    function currentConfig() {
+        return currentScenario === 'normal' ? adminConfig : adminConfigWithDisabled;
+    }
+
+    function render() {
+        const cfg = currentConfig();
+
+        // Pills - 所有模型统一显示（admin 全 0 也正常显示）；用户启用后会看到一列 0 cells（自然反馈，无需特殊态）
+        const pillContainer = document.getElementById('live-pills');
+        pillContainer.innerHTML = modelPool.map(m => 
+            pillHtml(m, { active: state.enabled[m.id], onclick: `liveMatrix.togglePill('${m.id}')` })
+        ).join('');
+
+        // Matrix
+        const enabled = modelPool.filter(m => state.enabled[m.id]);
+        const matrixEl = document.getElementById('live-matrix');
+        matrixEl.innerHTML = renderMatrixHtml(
+            enabled,
+            (mid, tid) => state.values[mid][tid],
+            (mid, tid) => cfg[mid]?.[tid] ?? 0,
+            { configTable: cfg }
+        );
+
+        // input bind
+        matrixEl.querySelectorAll('input[type=number]').forEach(input => {
+            input.oninput = () => {
+                const mid = input.dataset.model;
+                const tid = input.dataset.type;
+                const max = parseInt(input.dataset.max) || 0;
+                let v = parseInt(input.value);
+                if (isNaN(v)) v = 0;
+                if (v < 0) v = 0;
+                if (v > max) v = max; // 步进器+max 主防御；这里兜底
+                input.value = v;
+                state.values[mid][tid] = v;
+                recalc();
+            };
+        });
+
+        recalc();
+    }
+
+    function recalc() {
+        const enabled = modelPool.filter(m => state.enabled[m.id]);
+        updateSubtotals(document.getElementById('live-matrix'), state.values, enabled);
+
+        let total = 0;
+        enabled.forEach(m => total += computeSubtotal(state.values, m.id));
+        const totalEl = document.getElementById('live-total');
+        if (parseInt(totalEl.textContent) !== total) {
+            totalEl.textContent = total;
+            totalEl.classList.remove('number-pop'); void totalEl.offsetWidth; totalEl.classList.add('number-pop');
+        }
+        renderQuotaRecap(document.getElementById('live-quota'), enabled, state.values);
+
+    }
+
+    function validateAndAct(actionLabel) {
+        const enabled = modelPool.filter(m => state.enabled[m.id]);
+        let total = 0;
+        enabled.forEach(m => imageTypes.forEach(t => total += (state.values[m.id][t.id] || 0)));
+        const hasOverQuota = enabled.some(m => computeSubtotal(state.values, m.id) > (m.quota - m.used));
+        if (enabled.length === 0) { showToast('请启用模型', 'error'); return; }
+        if (total === 0) { showToast('请配置数量', 'error'); return; }
+        if (hasOverQuota) { showToast('额度不足', 'error'); return; }
+        showToast(`${actionLabel}成功（demo）`);
+    }
+
+    return {
+        init() { init(); render(); },
+        handleSubmit() { validateAndAct('提交生图'); },
+        handleSaveDraft() { validateAndAct('保存待提交'); },
+        togglePill(modelId) {
+            state.enabled[modelId] = !state.enabled[modelId];
+            // 启用时填默认值
+            if (state.enabled[modelId]) {
+                imageTypes.forEach(t => {
+                    state.values[modelId][t.id] = currentConfig()[modelId]?.[t.id] || 0;
+                });
+                showToast(`已启用 ${modelById(modelId).name}，按默认值填充`);
+            } else {
+                imageTypes.forEach(t => {
+                    state.values[modelId][t.id] = 0;
+                });
+                showToast(`已禁用 ${modelById(modelId).name}`);
+            }
+            render();
+        },
+        switchScenario(s) {
+            currentScenario = s;
+            // 切换场景后，已启用模型按新 admin 默认值刷新
+            modelPool.forEach(m => {
+                if (state.enabled[m.id]) {
+                    imageTypes.forEach(t => state.values[m.id][t.id] = currentConfig()[m.id]?.[t.id] || 0);
+                }
+            });
+            render();
+        },
+        fillByDefault() {
+            const cfg = currentConfig();
+            modelPool.filter(m => state.enabled[m.id]).forEach(m => {
+                imageTypes.forEach(t => {
+                    state.values[m.id][t.id] = cfg[m.id]?.[t.id] || 0;
+                });
+            });
+            render();
+            showToast('已按默认值填充');
+        },
+        clearAll() {
+            modelPool.forEach(m => imageTypes.forEach(t => state.values[m.id][t.id] = 0));
+            render();
+            showToast('已清零');
+        }
+    };
+
+})();
+
+// ======================================================================
+// 启动
+// ======================================================================
+
+    // ============================================================ D2 editMatrix（可交互编辑态）
+    const editMatrix = (function() {
+        const initialEnabled = { linkfox: true, ziyan: true, huiwa: false };
+        const initialValues = {
+            linkfox: { scene: 8, whiteClose: 4, close: 2, selling: 2, aplus: 6 },
+            ziyan:   { scene: 3, whiteClose: 2, close: 2, selling: 3, aplus: 0 },
+            huiwa:   { scene: 0, whiteClose: 0, close: 0, selling: 0, aplus: 0 }
+        };
+        const state = {
+            enabled: { ...initialEnabled },
+            values: JSON.parse(JSON.stringify(initialValues))
+        };
+
+        function getValue(mid, tid) { return state.values[mid][tid] || 0; }
+        function getMax(mid, tid) { return adminConfig[mid]?.[tid] || 0; }
+
+        function recalc() {
+            let total = 0;
+            const perModel = { linkfox: 0, ziyan: 0, huiwa: 0 };
+            let hasOverMax = false;
+            modelPool.forEach(m => {
+                if (!state.enabled[m.id]) return;
+                imageTypes.forEach(t => {
+                    const v = state.values[m.id][t.id] || 0;
+                    const max = getMax(m.id, t.id);
+                    perModel[m.id] += v;
+                    total += v;
+                    if (v > max) hasOverMax = true;
+                });
+            });
+            const totalEl = document.getElementById('edit-total');
+            if (totalEl) totalEl.textContent = total;
+
+const quotaEl = document.getElementById('edit-quota');
+            if (quotaEl) {
+                const enabled = modelPool.filter(m => state.enabled[m.id]);
+                renderQuotaRecap(quotaEl, enabled, state.values);
+            }
+        }
+
+        function applyOverMaxStyle() {
+            const matrixEl = document.getElementById('edit-matrix');
+            if (!matrixEl) return;
+            matrixEl.querySelectorAll('input[type=number]').forEach(input => {
+                const max = parseInt(input.dataset.max) || 0;
+                const v = parseInt(input.value) || 0;
+                if (v > max) {
+                    input.classList.add('over-max-cell');
+                    const hint = input.parentElement.querySelector('.max-hint');
+                    if (hint) hint.classList.add('over-max');
+                } else {
+                    input.classList.remove('over-max-cell');
+                    const hint = input.parentElement.querySelector('.max-hint');
+                    if (hint) hint.classList.remove('over-max');
+                }
+            });
+        }
+
+        function render() {
+            const pillContainer = document.getElementById('edit-pills');
+            if (!pillContainer) return;
+            pillContainer.innerHTML = modelPool.map(m =>
+                pillHtml(m, { active: state.enabled[m.id], onclick: `editMatrix.togglePill('${m.id}')` })
+            ).join('');
+
+            const matrixEl = document.getElementById('edit-matrix');
+            const enabled = modelPool.filter(m => state.enabled[m.id]);
+            if (enabled.length === 0) {
+                matrixEl.innerHTML = '<tbody><tr><td style="padding:28px;text-align:center;color:#94a3b8;font-size:12px;">请至少启用一个模型</td></tr></tbody>';
+            } else {
+                matrixEl.innerHTML = renderMatrixHtml(enabled, getValue, getMax);
+                // 给 input 绑定事件 + 标红 over-max
+                matrixEl.querySelectorAll('input[type=number]').forEach(input => {
+                    input.oninput = () => {
+                        const mid = input.dataset.model;
+                        const tid = input.dataset.type;
+                        const max = parseInt(input.dataset.max) || 0;
+                        let v = parseInt(input.value);
+                        if (isNaN(v)) v = 0;
+                        if (v < 0) v = 0;
+                        if (v > max) v = max;
+                        input.value = v;
+                        state.values[mid][tid] = v;
+                        applyOverMaxStyle();
+                        recalc();
+                    };
+                });
+                applyOverMaxStyle();
+            }
+            recalc();
+        }
+
+        function validateAndAct(actionLabel) {
+            const enabled = modelPool.filter(m => state.enabled[m.id]);
+            let total = 0;
+            let hasOverMax = false;
+            enabled.forEach(m => imageTypes.forEach(t => {
+                const v = state.values[m.id][t.id] || 0;
+                total += v;
+                if (v > getMax(m.id, t.id)) hasOverMax = true;
+            }));
+            if (enabled.length === 0) { showToast('请启用模型', 'error'); return; }
+            if (total === 0) { showToast('请配置数量', 'error'); return; }
+            if (hasOverMax) { showToast('数量超过上限', 'error'); return; }
+            showToast(`${actionLabel}成功（demo）`);
+        }
+
+        return {
+            init() { render(); },
+            handleSubmit() { validateAndAct('提交生图'); },
+            handleSaveDraft() { validateAndAct('保存待提交'); },
+            togglePill(mid) {
+                state.enabled[mid] = !state.enabled[mid];
+                if (state.enabled[mid]) {
+                    imageTypes.forEach(t => {
+                        if (state.values[mid][t.id] === 0) {
+                            state.values[mid][t.id] = adminConfig[mid]?.[t.id] || 0;
+                        }
+                    });
+                }
+                render();
+            },
+            fillByDefault() {
+                modelPool.forEach(m => {
+                    if (state.enabled[m.id]) {
+                        imageTypes.forEach(t => {
+                            state.values[m.id][t.id] = adminConfig[m.id]?.[t.id] || 0;
+                        });
+                    }
+                });
+                render();
+                showToast('已按默认值填充');
+            },
+            clearAll() {
+                modelPool.forEach(m => {
+                    if (state.enabled[m.id]) {
+                        imageTypes.forEach(t => state.values[m.id][t.id] = 0);
+                    }
+                });
+                render();
+                showToast('已清零');
+            }
+        };
+    })();
+
+
+    // ============================================================ M1 双实例（美工 + 运营）
+    function createModalBInstance(prefix, imageTypeIds) {
+        const types = imageTypes.filter(t => imageTypeIds.includes(t.id));
+        const state = {
+            enabled: { linkfox: true, ziyan: true, huiwa: false },
+            values: {}
+        };
+        modelPool.forEach(m => {
+            state.values[m.id] = {};
+            types.forEach(t => {
+                state.values[m.id][t.id] = state.enabled[m.id] ? (adminConfig[m.id]?.[t.id] || 0) : 0;
+            });
+        });
+
+        function getValue(mid, tid) { return state.values[mid][tid] || 0; }
+        function getMax(mid, tid) { return adminConfig[mid]?.[tid] || 0; }
+
+        function recalcSubtotals() {
+            const matrixEl = document.getElementById(`${prefix}-matrix`);
+            if (!matrixEl) return;
+            modelPool.forEach(m => {
+                if (!state.enabled[m.id]) return;
+                let subtotal = 0;
+                types.forEach(t => { subtotal += state.values[m.id][t.id] || 0; });
+                const el = matrixEl.querySelector(`[data-model-subtotal="${m.id}"]`);
+                if (el) el.textContent = subtotal;
+            });
+        }
+
+        function applyOverMaxStyle() {
+            const matrixEl = document.getElementById(`${prefix}-matrix`);
+            if (!matrixEl) return;
+            matrixEl.querySelectorAll('input[type=number]').forEach(input => {
+                const max = parseInt(input.dataset.max) || 0;
+                const v = parseInt(input.value) || 0;
+                if (v > max) {
+                    input.classList.add('over-max-cell');
+                    const hint = input.parentElement.querySelector('.max-hint');
+                    if (hint) hint.classList.add('over-max');
+                } else {
+                    input.classList.remove('over-max-cell');
+                    const hint = input.parentElement.querySelector('.max-hint');
+                    if (hint) hint.classList.remove('over-max');
+                }
+            });
+        }
+
+        function render() {
+            const pillContainer = document.getElementById(`${prefix}-pills`);
+            if (!pillContainer) return;
+            pillContainer.innerHTML = modelPool.map(m =>
+                pillHtml(m, { active: state.enabled[m.id], onclick: `${prefix}.togglePill('${m.id}')` })
+            ).join('');
+
+            const matrixEl = document.getElementById(`${prefix}-matrix`);
+            const enabled = modelPool.filter(m => state.enabled[m.id]);
+            if (enabled.length === 0) {
+                matrixEl.innerHTML = '<tbody><tr><td style="padding:28px;text-align:center;color:#94a3b8;font-size:12px;">请至少启用一个模型</td></tr></tbody>';
+            } else {
+                matrixEl.innerHTML = renderMatrixHtml(enabled, getValue, getMax, { types });
+                matrixEl.querySelectorAll('input[type=number]').forEach(input => {
+                    input.oninput = () => {
+                        const mid = input.dataset.model;
+                        const tid = input.dataset.type;
+                        const max = parseInt(input.dataset.max) || 0;
+                        let v = parseInt(input.value);
+                        if (isNaN(v)) v = 0;
+                        if (v < 0) v = 0;
+                        if (v > max) v = max;
+                        input.value = v;
+                        state.values[mid][tid] = v;
+                        applyOverMaxStyle();
+                        recalcSubtotals();
+                    };
+                });
+                applyOverMaxStyle();
+                recalcSubtotals();
+            }
+        }
+
+        function validateAndAct(actionLabel) {
+            const enabled = modelPool.filter(m => state.enabled[m.id]);
+            let total = 0;
+            let hasOverMax = false;
+            enabled.forEach(m => types.forEach(t => {
+                const v = state.values[m.id][t.id] || 0;
+                total += v;
+                if (v > getMax(m.id, t.id)) hasOverMax = true;
+            }));
+            if (enabled.length === 0) { showToast('请启用模型', 'error'); return; }
+            if (total === 0) { showToast('请配置数量', 'error'); return; }
+            if (hasOverMax) { showToast('数量超过上限', 'error'); return; }
+            showToast(`${actionLabel}成功（demo）`);
+        }
+
+        return {
+            init() { render(); },
+            togglePill(mid) {
+                state.enabled[mid] = !state.enabled[mid];
+                if (state.enabled[mid]) {
+                    types.forEach(t => {
+                        if (state.values[mid][t.id] === 0) {
+                            state.values[mid][t.id] = adminConfig[mid]?.[t.id] || 0;
+                        }
+                    });
+                }
+                render();
+            },
+            fillByDefault() {
+                modelPool.forEach(m => {
+                    if (state.enabled[m.id]) {
+                        types.forEach(t => {
+                            state.values[m.id][t.id] = adminConfig[m.id]?.[t.id] || 0;
+                        });
+                    }
+                });
+                render();
+                showToast('已按默认值填充');
+            },
+            clearAll() {
+                modelPool.forEach(m => {
+                    if (state.enabled[m.id]) {
+                        types.forEach(t => state.values[m.id][t.id] = 0);
+                    }
+                });
+                render();
+                showToast('已清零');
+            },
+            handleSubmit() { validateAndAct('确认导入'); }
+        };
+    }
+
+    const mbg = createModalBInstance('mbg', ['scene', 'whiteClose', 'close', 'selling']);
+    const mby = createModalBInstance('mby', ['scene', 'whiteClose', 'close', 'selling', 'aplus']);
+
+    liveMatrix.init();
+    editMatrix.init();
+
+    // ============================================================ M2 m2Matrix（批量修改 · 三态语义）
+    const m2Matrix = (function() {
+        const state = {
+            enabled: { linkfox: true, ziyan: true, huiwa: true },  // 默认全启用，避免漏改
+            values: {}
+        };
+        modelPool.forEach(m => {
+            state.values[m.id] = {};
+            imageTypes.forEach(t => { state.values[m.id][t.id] = ''; }); // '' = 留空 = 不改
+        });
+
+        function getValue(mid, tid) { return state.values[mid][tid]; }
+        function getMax(mid, tid) { return adminConfig[mid]?.[tid] || 0; }
+
+        function applyTriStateStyle() {
+            const matrixEl = document.getElementById('m2-matrix');
+            if (!matrixEl) return;
+            matrixEl.querySelectorAll('input.m2-cell').forEach(input => {
+                const mid = input.dataset.model;
+                const tid = input.dataset.type;
+                const v = state.values[mid][tid];
+                input.classList.remove('m2-zero', 'm2-modified');
+                if (v === '' || v === null || v === undefined) {
+                    // 留空态 - 由 :placeholder-shown 伪类处理
+                } else if (parseInt(v) === 0) {
+                    input.classList.add('m2-zero');
+                } else {
+                    input.classList.add('m2-modified');
+                }
+            });
+        }
+
+        function render() {
+            const pillContainer = document.getElementById('m2-pills');
+            if (!pillContainer) return;
+            pillContainer.innerHTML = modelPool.map(m =>
+                pillHtml(m, { active: state.enabled[m.id], onclick: `m2Matrix.togglePill('${m.id}')` })
+            ).join('');
+
+            const matrixEl = document.getElementById('m2-matrix');
+            const enabled = modelPool.filter(m => state.enabled[m.id]);
+            if (enabled.length === 0) {
+                matrixEl.innerHTML = '<tbody><tr><td style="padding:28px;text-align:center;color:#94a3b8;font-size:12px;">请至少启用一个模型</td></tr></tbody>';
+            } else {
+                matrixEl.innerHTML = renderMatrixHtml(enabled, getValue, getMax, { mode: 'modify' });
+                matrixEl.querySelectorAll('input.m2-cell').forEach(input => {
+                    input.oninput = () => {
+                        const mid = input.dataset.model;
+                        const tid = input.dataset.type;
+                        const max = parseInt(input.dataset.max) || 0;
+                        const raw = input.value;
+                        if (raw === '') {
+                            state.values[mid][tid] = '';
+                        } else {
+                            let v = parseInt(raw);
+                            if (isNaN(v)) v = 0;
+                            if (v < 0) v = 0;
+                            if (v > max) v = max;
+                            input.value = v;
+                            state.values[mid][tid] = v;
+                        }
+                        applyTriStateStyle();
+                    };
+                });
+                applyTriStateStyle();
+            }
+        }
+
+        function validateAndAct(actionLabel) {
+            const enabled = modelPool.filter(m => state.enabled[m.id]);
+            let modifiedCount = 0;
+            enabled.forEach(m => imageTypes.forEach(t => {
+                const v = state.values[m.id][t.id];
+                if (v !== '' && v !== null && v !== undefined) modifiedCount++;
+            }));
+            if (enabled.length === 0) { showToast('请启用模型', 'error'); return; }
+            if (modifiedCount === 0) { showToast('请至少配置一个修改', 'error'); return; }
+            showToast(`${actionLabel}成功（demo）`);
+        }
+
+        return {
+            init() { render(); },
+            togglePill(mid) {
+                state.enabled[mid] = !state.enabled[mid];
+                render();
+            },
+            fillByDefault() {
+                modelPool.forEach(m => {
+                    if (state.enabled[m.id]) {
+                        imageTypes.forEach(t => {
+                            state.values[m.id][t.id] = adminConfig[m.id]?.[t.id] || 0;
+                        });
+                    }
+                });
+                render();
+                showToast('已按默认值填充');
+            },
+            clearAll() {
+                modelPool.forEach(m => {
+                    if (state.enabled[m.id]) {
+                        imageTypes.forEach(t => state.values[m.id][t.id] = 0);
+                    }
+                });
+                render();
+                showToast('已清零');
+            },
+            resetAll() {
+                modelPool.forEach(m => {
+                    if (state.enabled[m.id]) {
+                        imageTypes.forEach(t => state.values[m.id][t.id] = '');
+                    }
+                });
+                render();
+                showToast('已留空');
+            },
+            handleSubmit() { validateAndAct('应用修改'); }
+        };
+    })();
+
+    mbg.init();
+    mby.init();
+    m2Matrix.init();
+</script>
+</body>
+</html>
